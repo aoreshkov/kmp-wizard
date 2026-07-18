@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in the wizard or a generated project is broken
+labels: [bug]
+body:
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: e.g. 1.5.0
+    validations:
+      required: true
+  - type: input
+    id: ide-version
+    attributes:
+      label: IDE version and build number
+      description: Help → About (e.g. IntelliJ IDEA 2026.1.1, Build #IC-261.x)
+      placeholder: IntelliJ IDEA 2026.1.1 (IC-261.x)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. Windows 11 / macOS 15 / Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. File → New → Project → KMP Project
+        2. Enter package "…", feature "…"
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack trace
+      description: Help → Show Log in Explorer/Finder (idea.log). Paste relevant excerpts.
+      render: text

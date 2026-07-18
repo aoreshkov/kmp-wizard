@@ -1,0 +1,8 @@
+.idea
+.kotlin
+.gradle
+.artifacts
+.intellijPlatform
+build/
+local.properties
+docs/

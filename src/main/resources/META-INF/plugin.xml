@@ -1,0 +1,45 @@
+<idea-plugin>
+    <id>app.oreshkov.kmp.wizard</id>
+    <name>KMP Project Wizard</name>
+    <!-- <vendor>, <name>, <description>, <version> and <change-notes> are injected at
+         build time by intellijPlatform.pluginConfiguration in build.gradle.kts (the single
+         source of truth, fed from gradle.properties). Don't duplicate <vendor> here. -->
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.kotlin</depends>
+    <depends>com.intellij.gradle</depends>
+
+    <resource-bundle>messages.KMPWizardBundle</resource-bundle>
+
+    <!-- Freemium: the plugin installs and runs for free; the Pro tier (agent + CI
+         scaffolding) is gated via LicensingFacade. release-version + release-date identify
+         the licensable release and drive license-expiry / perpetual-fallback windows.
+         Marketplace rules (docs/marketplace/versioning-of-paid-plugins): release-version is
+         an integer split into two numbers where the SECOND is a single digit (20211 -> 2021,
+         1), and those encode the plugin's major.minor — so for 1.5.x the only valid value is
+         15 -> (1, 5). It must be non-descending. Official best practice: "when we upload any
+         minor updates, we keep the release-version untouched and only increment the version";
+         the Marketplace also rejects reusing a release-version with a DIFFERENT release-date.
+         So every patch release in the 1.5 line keeps BOTH 15 and 20260630 from 1.5.0 —
+         only pluginVersion changes. Bump these (to 16 + a new date) only at the next minor,
+         1.6.0. The verifyProductDescriptor Gradle task (wired into `check`) enforces the
+         release-version ↔ pluginVersion match, so a forgotten bump fails the build. -->
+    <product-descriptor code="PKMPPROJECTWIZA"
+                        release-date="20260630"
+                        release-version="15"
+                        optional="true"/>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <newProjectWizard.generator
+                implementation="app.oreshkov.kmp.wizard.KMPProjectWizard"/>
+
+        <notificationGroup id="app.oreshkov.kmp.wizard.notifications"
+                           displayType="BALLOON"
+                           bundle="messages.KMPWizardBundle"
+                           key="notification.group.name"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="org.jetbrains.kotlin">
+        <supportsKotlinPluginMode supportsK2="true" />
+    </extensions>
+</idea-plugin>

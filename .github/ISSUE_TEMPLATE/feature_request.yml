@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest an improvement to the wizard or the generated projects
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: >-
+        Changes to what generated projects contain (dependencies, modules,
+        architecture) belong to the kmp-ledger reference app, not this repo.
+      options:
+        - The wizard itself (UI, options, generation)
+        - Generated project content (→ likely belongs in kmp-ledger)
+        - Not sure
+    validations:
+      required: true

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: KMP Ledger (template source)
+    url: https://github.com/aoreshkov/kmp-ledger/issues
+    about: Report issues with the content of generated projects here.
+  - name: JetBrains Marketplace page
+    url: https://plugins.jetbrains.com/plugin/31786
+    about: Ratings, reviews, and installation.
+  - name: Website
+    url: https://kmpwizard.oreshkov.app/
+    about: Documentation and Pro tier information.
