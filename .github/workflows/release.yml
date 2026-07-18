@@ -1,0 +1,70 @@
+# Publishes the plugin to the JetBrains Marketplace when a GitHub Release is
+# published (the draft-release gate — see .claude/skills/release/SKILL.md).
+# workflow_dispatch is a dry run: it exercises the signing secrets via signPlugin
+# without publishing anything.
+#
+# Marketplace rejects duplicate versions, so an accidental re-run of an
+# already-published version fails loudly instead of double-publishing.
+name: Release
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+
+permissions:
+  contents: write # upload the plugin ZIP as a release asset
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish to Marketplace
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: marketplace
+    steps:
+      # On the release event the default ref is the release tag; on
+      # workflow_dispatch it is the default branch — both are what we want.
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+        with:
+          cache-read-only: true
+
+      - name: Sign plugin (dry run)
+        if: github.event_name == 'workflow_dispatch'
+        run: ./gradlew signPlugin
+        env:
+          CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
+
+      - name: Publish plugin
+        if: github.event_name == 'release'
+        run: ./gradlew publishPlugin
+        env:
+          PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
+
+      - name: Attach plugin ZIP to the release
+        if: github.event_name == 'release'
+        run: |
+          files=(build/distributions/*-signed.zip)
+          [ -e "${files[0]}" ] || files=(build/distributions/*.zip)
+          gh release upload "$TAG_NAME" "${files[@]}" --clobber
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}

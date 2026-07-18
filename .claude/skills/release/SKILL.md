@@ -1,10 +1,10 @@
 ---
 name: release
-description: Cut a new KMP Project Wizard release to the JetBrains Marketplace — bump the kmp-ledger template pin, draft the changelog from the source diff, recommend and confirm the version, bump it, verify, tag, and (gated) publish. Optionally pass a version (e.g. /release 1.3.0) to pre-select; otherwise the skill recommends one from the source diff and confirms it. Do not invoke automatically.
+description: Cut a new KMP Project Wizard release to the JetBrains Marketplace — bump the kmp-ledger template pin, draft the changelog from the source diff, recommend and confirm the version, bump it, verify, push, stage a draft GitHub Release, and (gated) publish it, which triggers the CI publish workflow. Optionally pass a version (e.g. /release 1.3.0) to pre-select; otherwise the skill recommends one from the source diff and confirms it. Do not invoke automatically.
 disable-model-invocation: true
 argument-hint: [version]
 arguments: version
-allowed-tools: Bash(./gradlew*), Bash(git status*), Bash(git tag*), Bash(git diff*), Bash(git add*), Bash(git commit*), Bash(git ls-remote*), Bash(git push*), Bash(gh release*), Bash(head*), Read, Edit, Glob, AskUserQuestion
+allowed-tools: Bash(./gradlew*), Bash(git status*), Bash(git tag*), Bash(git diff*), Bash(git add*), Bash(git commit*), Bash(git ls-remote*), Bash(git fetch*), Bash(git push*), Bash(gh release*), Bash(gh secret*), Bash(gh run*), Bash(head*), Read, Edit, Glob, AskUserQuestion
 context: fork
 ---
 
@@ -21,9 +21,12 @@ step 4 — **not** the raw `$version` — is **the confirmed version** consumed 
 
 ## Repo facts (do not violate)
 
-- **Public remote:** `https://github.com/aoreshkov/kmp-wizard.git` (`origin`). The Marketplace
-  release is created by `./gradlew publishPlugin`, **not** by a pushed tag — pushing `main` + the
-  tag and creating the GitHub Release happen *after* the publish gate (step 10).
+- **Public remote:** `https://github.com/aoreshkov/kmp-wizard.git` (`origin`). Marketplace
+  publishing runs in **GitHub Actions** (`.github/workflows/release.yml`), triggered by
+  publishing the draft GitHub Release (step 10). GitHub creates the `vX.Y.Z` tag at that
+  moment — never create the tag locally; an aborted release (deleted draft) leaves no tag.
+  The four publish/signing secrets live in the repo's `marketplace` environment, not on this
+  machine.
 - **Never push the local `archive/pre-publish` branch or the pre-publish tags reachable only
   from it** — that history is private. Only push `main` and the new release tag.
 - The changelog version heading style is `## X.Y.Z - YYYY-MM-DD` (no brackets), matching the
@@ -70,15 +73,16 @@ git commit -m "chore: bump kmp-ledger templates to vX.Y.Z"
 The remaining checks — only needed later in the run. A missing item here does **not** block
 the early steps; it warns now so there is no surprise at the publish gate.
 
-- Confirm a publish token is resolvable (`PUBLISH_TOKEN` env var or `local.properties`). If not,
-  warn now — the run can still proceed up to the publish gate.
-- Confirm the **signing credentials** are present so the publish is signed, not silently
-  unsigned: the `CERTIFICATE_CHAIN`, `PRIVATE_KEY` and `PRIVATE_KEY_PASSWORD` environment
-  variables (the IntelliJ Platform Gradle Plugin auto-wires `signPlugin` from these). If any is
-  missing, **warn loudly** here and again at the publish gate — `publishPlugin` would
-  otherwise upload an unsigned build.
-- `git tag --sort=-v:refname | head -1` → note the previous tag (e.g. `v1.2.1`), consumed by
-  step 3's diff range.
+- Confirm the publish workflow exists on `main`: `.github/workflows/release.yml` (Glob/Read).
+- Confirm the four secrets exist in the `marketplace` environment (values are unreadable —
+  existence only): `gh secret list --env marketplace` must show `PUBLISH_TOKEN`,
+  `CERTIFICATE_CHAIN`, `PRIVATE_KEY`, `PRIVATE_KEY_PASSWORD`. If any is missing, **warn
+  loudly** here and again at the publish gate — a missing token fails the workflow, and
+  missing signing secrets would let `publishPlugin` upload an **unsigned** build.
+- Release tags are created by GitHub on origin (step 10), so the local clone may lag: run
+  `git ls-remote --tags --sort=-v:refname origin | head -5` to find the previous tag (e.g.
+  `v1.2.1`), and `git fetch origin tag v<previous>` if it is missing locally — step 3's diff
+  range needs it.
 - Confirm the `CHANGELOG.md` section matching the current `pluginVersion` is **the content you
   intend to publish**, and that anything under `## Unreleased` belongs to a *future* version:
   re-running `publishPlugin` without a version bump republishes the current version's notes and
@@ -201,39 +205,49 @@ hard-fails if step 6's `<product-descriptor>` doesn't match the confirmed versio
 descriptor bump cannot reach the tag or the publish gate. Do not tag or publish on any failure;
 report the output and stop.
 
-### 8. Commit and tag
+### 8. Commit and push
 
 ```
 git add gradle.properties CHANGELOG.md src/main/resources/META-INF/plugin.xml
 git commit -m "chore: release <confirmed version>"
-git tag -a v<confirmed version> -m "Release version <confirmed version>"
-```
-
-Do **not** push yet — pushing happens in step 10, after the publish gate, so an aborted
-publish never leaves a public tag pointing at an unpublished version.
-
-### 9. Publish gate (irreversible)
-
-Marketplace publishing cannot be undone. **Ask the user to confirm explicitly** before running it.
-If the signing credentials were missing at preflight, **repeat that warning here** — confirm the
-user really wants to publish an unsigned build. Only on a clear "yes":
-
-```
-./gradlew publishPlugin
-```
-
-Then report the published version and remind the user to verify the listing and "What's New" on the
-Marketplace.
-
-### 10. Push and create the GitHub Release
-
-Only after a successful publish (skip entirely if the publish gate was declined):
-
-```
 git push origin main
-git push origin v<confirmed version>
-gh release create v<confirmed version> --title "v<confirmed version>" --notes "<the confirmed version's CHANGELOG section>"
 ```
 
-Use the exact changelog section rolled in step 5 as the release notes. Never push
-`archive/pre-publish` or any pre-publish tag.
+Do **not** create a tag — GitHub creates `v<confirmed version>` when the draft release is
+published in step 10. Pushing `main` here is safe: the release commit is inert until then.
+Never push `archive/pre-publish` or any pre-publish tag.
+
+### 9. Create the draft GitHub Release
+
+```
+gh release create v<confirmed version> --draft --target main --title "v<confirmed version>" --notes "<the confirmed version's CHANGELOG section>"
+```
+
+Use the exact changelog section rolled in step 5 as the release notes. A draft creates no tag
+and triggers nothing — it is the staged, reviewable gate.
+
+### 10. Publish gate (irreversible)
+
+Publishing the release fires `.github/workflows/release.yml`, which runs
+`./gradlew publishPlugin` in CI — Marketplace publishing cannot be undone. **Ask the user to
+confirm explicitly** before it. If any secret was missing at preflight, **repeat that warning
+here**. Only on a clear "yes":
+
+```
+gh release edit v<confirmed version> --draft=false
+```
+
+GitHub now creates the tag and starts the workflow (if the `marketplace` environment has a
+required reviewer, the user must also approve the run in the Actions UI). Watch it:
+
+```
+gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+```
+
+Report the outcome and remind the user to verify the listing and "What's New" on the
+Marketplace. If the run fails **after** the tag exists (e.g. Marketplace outage), fix the cause
+and re-run the workflow from the Actions UI — the checkout is by tag, so a re-run is
+reproducible; do not delete the tag.
+
+If the gate is **declined**: `gh release delete v<confirmed version>` — the draft vanishes
+cleanly, no tag ever existed, and `main` merely carries an unpublished version bump.
