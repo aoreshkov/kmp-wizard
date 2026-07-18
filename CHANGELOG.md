@@ -4,6 +4,20 @@
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## 1.6.0 - 2026-07-18
+
+### Added
+
 - **Community & CI scaffolding in generated projects**: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, an OpenSSF Scorecard workflow, a dependency-submission workflow, and `androidApp/proguard-rules.pro` — picked up from the kmp-ledger `v1.5.0` release.
 - **API dumps generated from the user's code**: after the generated project's first Gradle sync, the wizard runs `apiDump` in the background so the binary-compatibility dumps under `<module>/api/` reflect the project's own package, app, and feature names. If the run fails, a notification points to `./gradlew apiDump`.
 - **Repository support & ownership files**: a `SUPPORT.md` routing questions to the right channels (issues, kmp-ledger, Marketplace, private contact) and a `CODEOWNERS` file.
@@ -16,6 +30,7 @@
 
 ### Fixed
 
+- **No half-built projects on cancel or failure**: generation now runs in an isolated staging directory and is committed to the project folder only after it fully succeeds — cancelling the wizard or hitting a generation error leaves the project directory untouched.
 - **No more maintainer-local files in generated projects**: the previous template snapshot could pick up files that existed only in the maintainer's working copy (internal review documents under `docs/`, a local `gradle-daemon-jvm.properties`); generating from the published release tag makes that impossible.
 - **Generated projects no longer fail `check` on stale API dumps**: the templates used to ship the ledger's `*.api` / `*.klib.api` dumps with placeholder substitution applied. Dumps are compiler-output snapshots — compiler-generated symbol names, declaration sort order, and Compose lambda keys all derive from the original names — so the substituted copies could never match a fresh `apiDump`, and `./gradlew check` (`apiCheck`) failed in any project not named exactly like the ledger. Dump files are now excluded from the templates entirely (see the `apiDump`-after-sync entry above).
 - **No sponsor button on generated repos**: the ledger's `.github/FUNDING.yml` (its own sponsor config) is no longer copied into templates.
