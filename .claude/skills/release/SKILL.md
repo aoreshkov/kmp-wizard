@@ -26,7 +26,6 @@ step 4 — **not** the raw `$version` — is **the confirmed version** consumed 
   tag and creating the GitHub Release happen *after* the publish gate (step 10).
 - **Never push the local `archive/pre-publish` branch or the pre-publish tags reachable only
   from it** — that history is private. Only push `main` and the new release tag.
-- **No `Co-Authored-By` trailer** in commits.
 - The changelog version heading style is `## X.Y.Z - YYYY-MM-DD` (no brackets), matching the
   existing file — house style; the changelog Gradle plugin's parser accepts bracketed headings
   too, and a *missing* section for `pluginVersion` fails the build (`changelog.get` throws),
