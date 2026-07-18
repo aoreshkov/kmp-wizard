@@ -25,7 +25,7 @@ step 4 — **not** the raw `$version` — is **the confirmed version** consumed 
   publishing runs in **GitHub Actions** (`.github/workflows/release.yml`), triggered by
   publishing the draft GitHub Release (step 10). GitHub creates the `vX.Y.Z` tag at that
   moment — never create the tag locally; an aborted release (deleted draft) leaves no tag.
-  The four publish/signing secrets live in the repo's `marketplace` environment, not on this
+  The `PUBLISH_TOKEN` secret lives in the repo's `marketplace` environment, not on this
   machine.
 - **Never push the local `archive/pre-publish` branch or the pre-publish tags reachable only
   from it** — that history is private. Only push `main` and the new release tag.
@@ -74,11 +74,11 @@ The remaining checks — only needed later in the run. A missing item here does 
 the early steps; it warns now so there is no surprise at the publish gate.
 
 - Confirm the publish workflow exists on `main`: `.github/workflows/release.yml` (Glob/Read).
-- Confirm the four secrets exist in the `marketplace` environment (values are unreadable —
-  existence only): `gh secret list --env marketplace` must show `PUBLISH_TOKEN`,
-  `CERTIFICATE_CHAIN`, `PRIVATE_KEY`, `PRIVATE_KEY_PASSWORD`. If any is missing, **warn
-  loudly** here and again at the publish gate — the workflow fails fast on a missing token
-  or signing secret (it refuses to publish unsigned), so the release would stall at CI.
+- Confirm `PUBLISH_TOKEN` exists in the `marketplace` environment (values are unreadable —
+  existence only): `gh secret list --env marketplace`. It is the **only** secret — author-side
+  signing is deliberately omitted (the Marketplace does not support signature verification;
+  JetBrains staff statement, 2026-05). If it is missing, **warn loudly** here and again at
+  the publish gate — the workflow would fail at CI.
 - Release tags are created by GitHub on origin (step 10), so the local clone may lag: run
   `git ls-remote --tags --sort=-v:refname origin | head -5` to find the previous tag (e.g.
   `v1.2.1`), and `git fetch origin tag v<previous>` if it is missing locally — step 3's diff

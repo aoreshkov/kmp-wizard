@@ -174,10 +174,12 @@ intellijPlatform {
         }
     }
 
-    // No explicit `signing { }` block: the IntelliJ Platform Gradle Plugin already
-    // defaults certificateChain/privateKey/password to the standard CERTIFICATE_CHAIN,
-    // PRIVATE_KEY and PRIVATE_KEY_PASSWORD environment variables, so declaring them was
-    // pure duplication. The /release skill preflights these creds before publishing.
+    // No `signing { }` block on purpose: author-side plugin signing is deliberately
+    // unused — JetBrains Marketplace does not support signature verification (staff
+    // statement, 2026-05: https://platform.jetbrains.com/t/-/2584), so signPlugin would
+    // sign something nothing verifies. All releases ship unsigned; revisit if JetBrains
+    // ever enables verification. (The plugin would still pick up the standard
+    // CERTIFICATE_CHAIN/PRIVATE_KEY/PRIVATE_KEY_PASSWORD env vars if ever set.)
 
     publishing {
         // Resolution order: env var → -PPUBLISH_TOKEN / ~/.gradle/gradle.properties →
