@@ -42,9 +42,15 @@ jobs:
         with:
           cache-read-only: true
 
+      # signPlugin is silently SKIPPED when the signing env vars are absent —
+      # both steps assert the signed ZIP exists so a missing/empty secret can
+      # never produce a green dry run or an unsigned Marketplace upload.
       - name: Sign plugin (dry run)
         if: github.event_name == 'workflow_dispatch'
-        run: ./gradlew signPlugin
+        run: |
+          ./gradlew signPlugin
+          files=(build/distributions/*-signed.zip)
+          [ -e "${files[0]}" ] || { echo "::error::signPlugin produced no signed ZIP — signing secrets are missing or empty in the marketplace environment"; exit 1; }
         env:
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
@@ -52,7 +58,11 @@ jobs:
 
       - name: Publish plugin
         if: github.event_name == 'release'
-        run: ./gradlew publishPlugin
+        run: |
+          ./gradlew signPlugin
+          files=(build/distributions/*-signed.zip)
+          [ -e "${files[0]}" ] || { echo "::error::refusing to publish unsigned — signing secrets are missing or empty in the marketplace environment"; exit 1; }
+          ./gradlew publishPlugin
         env:
           PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
           CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}

@@ -77,8 +77,8 @@ the early steps; it warns now so there is no surprise at the publish gate.
 - Confirm the four secrets exist in the `marketplace` environment (values are unreadable —
   existence only): `gh secret list --env marketplace` must show `PUBLISH_TOKEN`,
   `CERTIFICATE_CHAIN`, `PRIVATE_KEY`, `PRIVATE_KEY_PASSWORD`. If any is missing, **warn
-  loudly** here and again at the publish gate — a missing token fails the workflow, and
-  missing signing secrets would let `publishPlugin` upload an **unsigned** build.
+  loudly** here and again at the publish gate — the workflow fails fast on a missing token
+  or signing secret (it refuses to publish unsigned), so the release would stall at CI.
 - Release tags are created by GitHub on origin (step 10), so the local clone may lag: run
   `git ls-remote --tags --sort=-v:refname origin | head -5` to find the previous tag (e.g.
   `v1.2.1`), and `git fetch origin tag v<previous>` if it is missing locally — step 3's diff
