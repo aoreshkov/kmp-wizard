@@ -49,10 +49,16 @@ jobs:
       # must actually execute: --no-build-cache prevents FROM-CACHE outcomes from
       # the cache shared with the Build workflow, --no-configuration-cache avoids
       # config-cache reuse bypassing the tracer env, --no-daemon keeps compilation
-      # in a freshly spawned traced process. compileKotlin only: skipping
-      # processResources avoids the kmp-ledger download + template generation.
+      # in a freshly spawned traced process. The CodeQL extractor runs inside the
+      # Kotlin compiler JVM and OOMs the default daemon heap, so compile in-process
+      # with an explicit 4g heap. compileKotlin only: skipping processResources
+      # avoids the kmp-ledger download + template generation.
       - name: Compile for CodeQL
-        run: ./gradlew --no-daemon --no-build-cache --no-configuration-cache compileKotlin
+        run: >
+          ./gradlew --no-daemon --no-build-cache --no-configuration-cache
+          -Dorg.gradle.jvmargs=-Xmx4g
+          -Pkotlin.compiler.execution.strategy=in-process
+          compileKotlin
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
