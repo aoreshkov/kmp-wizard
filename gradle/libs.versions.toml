@@ -1,8 +1,8 @@
 [versions]
 kotlin               = "2.4.0"
 intellij-platform   = "2.18.1"
-intellij-ide        = "2026.1.1"
-intellij-since-build = "261"
+intellij-ide        = "2026.2"
+intellij-since-build = "262"
 changelog            = "2.5.0"
 junit               = "4.13.2"
 

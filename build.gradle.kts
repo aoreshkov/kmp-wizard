@@ -134,11 +134,29 @@ val pluginDescription = """
       <li>Defaults mirror a real, open-source reference app.</li>
     </ul>
 
-    <p><b>Free &amp; Pro:</b> core templates for Android and Desktop are <b>free</b>.
+    <p><b>Free &amp; Pro:</b> core templates for Android, iOS and Desktop are <b>free</b>.
     A <b>Pro</b> tier adds Claude Code agent config and GitHub Actions CI scaffolding to the generated project.</p>
 
-    <p><b>Requirements:</b> IntelliJ IDEA or Android Studio (2026.1+). Generated projects
+    <p><b>Free vs Pro</b></p>
+    <table>
+      <tr><th>Feature</th><th>Free</th><th>Pro</th></tr>
+      <tr><td>KMP project generation (Android, Desktop, iOS)</td><td>✓</td><td>✓</td></tr>
+      <tr><td>Compose Multiplatform UI, Navigation 3, Room 3, Koin, Clean Architecture</td><td>✓</td><td>✓</td></tr>
+      <tr><td>Convention plugins, version catalog, unit &amp; UI test suite</td><td>✓</td><td>✓</td></tr>
+      <tr><td>Claude Code agent config (<code>CLAUDE.md</code>, <code>.claude/</code>)</td><td>—</td><td>✓</td></tr>
+      <tr><td>GitHub Actions CI scaffolding (<code>.github/</code>)</td><td>—</td><td>✓</td></tr>
+    </table>
+    <p>Pro is a one-time purchase. Personal and organization licenses available.</p>
+
+    <p><b>Requirements:</b> IntelliJ IDEA or Android Studio (2026.2+). Generated projects
     build with Gradle and run on Android (SDK 24+), Desktop (JVM) and iOS.</p>
+
+    <p><b>Resources:</b> the plugin is open source (MIT) —
+    <a href="https://github.com/aoreshkov/kmp-wizard">source code</a> ·
+    <a href="https://github.com/aoreshkov/kmp-wizard/issues">issue tracker</a> ·
+    <a href="https://kmpwizard.oreshkov.app">documentation</a>.
+    Templates mirror the open-source
+    <a href="https://github.com/aoreshkov/kmp-ledger">kmp-ledger</a> reference app.</p>
 """.trimIndent()
 
 intellijPlatform {
