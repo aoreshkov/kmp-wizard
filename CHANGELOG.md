@@ -6,24 +6,25 @@
 
 ### Changed
 
-- **Requires IntelliJ IDEA / Android Studio 2026.2+**: the minimum supported IDE moves up (`sinceBuild` 261 → 262). This lets generated projects target the newest Android Gradle plugin that the IntelliJ Android plugin accepts, instead of being held back to the 2026.1 ceiling.
-- **Ledger pin bumped to `v1.6.3`.**
-
 ### Deprecated
 
 ### Removed
 
 ### Fixed
 
-- **Generated projects no longer fail Gradle sync with "incompatible version (AGP 9.2.1)"**: on IntelliJ IDEA 2026.2 the bundled Android plugin supports the AGP 9.1 line, but generated projects shipped AGP 9.2.1 (from the pinned kmp-ledger release) and sync was refused. The ledger pin now provides AGP 9.1.1 — within the line the IntelliJ Android plugin accepts — so sync succeeds.
-
 ### Security
 
-## 1.6.1 - 2026-07-19
+## 1.6.1 - 2026-07-24
 
 ### Changed
 
+- **Requires IntelliJ IDEA / Android Studio 2026.2+**: the minimum supported IDE moves up (`sinceBuild` 261 → 262). This lets generated projects target the newest Android Gradle plugin that the IntelliJ Android plugin accepts, instead of being held back to the 2026.1 ceiling.
+- **Ledger pin bumped to `v1.6.3`.**
 - **Marketplace listing**: the plugin description now includes a Free-vs-Pro comparison table and links to the open-source repository (source code, issue tracker, documentation) — visible on the Marketplace page and in the IDE Plugin Manager. No functional changes.
+
+### Fixed
+
+- **Generated projects no longer fail Gradle sync with "incompatible version (AGP 9.2.1)"**: on IntelliJ IDEA 2026.2 the bundled Android plugin supports the AGP 9.1 line, but generated projects shipped AGP 9.2.1 (from the pinned kmp-ledger release) and sync was refused. The ledger pin now provides AGP 9.1.1 — within the line the IntelliJ Android plugin accepts — so sync succeeds.
 
 ## 1.6.0 - 2026-07-18
 
