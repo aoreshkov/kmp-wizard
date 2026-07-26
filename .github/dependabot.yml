@@ -5,6 +5,17 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      # CodeQL's Kotlin extractor trails Kotlin releases by ~21-35 days (2.3.20:
+      # 30d, 2.4.0: 35d, 2.4.10: ~3w) and hard-errors on anything newer, so the
+      # CodeQL workflow cannot compile a too-new Kotlin at all. Bumping sooner
+      # just parks a red PR until the next CodeQL CLI release. Kotlin's .10/.20
+      # releases are semver-patch bumps relative to each other, hence patch-days.
+      # Scoped via include so the rest of the Gradle deps keep the 3-day default.
+      semver-patch-days: 30
+      semver-minor-days: 30
+      include:
+        - "org.jetbrains.kotlin*"
   - package-ecosystem: github-actions
     directory: /
     schedule:
