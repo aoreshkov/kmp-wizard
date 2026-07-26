@@ -9,3 +9,18 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # github/codeql-action/{init,analyze} are separate Dependabot dependencies
+      # but must move together: analyze hard-errors when it loads a config
+      # written by a different init version. Ungrouped, each sub-action gets its
+      # own PR that can never go green. No update-types filter — a filter would
+      # push major bumps back out of the group and re-create the split.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
+      # groups default to applies-to: version-updates, so a security advisory
+      # would otherwise be ungrouped and split again.
+      codeql-action-security:
+        applies-to: security-updates
+        patterns:
+          - "github/codeql-action*"
