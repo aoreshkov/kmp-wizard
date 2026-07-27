@@ -1,8 +1,16 @@
 [versions]
 kotlin               = "2.4.0"
 intellij-platform   = "2.18.1"
-intellij-ide        = "2026.2"
-intellij-since-build = "262"
+# Compile against the LOWEST supported IDE, not the newest: the Plugin Verifier
+# flags any API introduced after sinceBuild, and Android Studio trails IntelliJ
+# IDEA by a full branch (see intellij-since-build).
+intellij-ide        = "2026.1"
+# 261, not 262, because Android Studio is a branch behind: the newest Android
+# Studio on ANY channel (Quail 4 canary, 2026-07-23) is still AI-261.26222.65, so
+# a 262 floor makes the plugin uninstallable in every existing Android Studio.
+# Quail's bundled Android tooling is AGP 9.3.1 (libagp-version.jar), well above
+# the ledger's 9.1.1, so the 1.6.1 AGP-compatibility fix is unaffected.
+intellij-since-build = "261"
 changelog            = "2.5.0"
 junit               = "4.13.2"
 
