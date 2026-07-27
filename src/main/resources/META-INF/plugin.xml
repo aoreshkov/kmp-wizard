@@ -9,6 +9,18 @@
     <depends>org.jetbrains.kotlin</depends>
     <depends>com.intellij.gradle</depends>
 
+    <!-- Android Studio replaces the platform's New Project dialog with its own NPW at
+         startup (android-npw-androidstudio.xml -> NewProjectActionsInitializer), and that
+         dialog never enumerates com.intellij.newProjectWizard.generator — so the generator
+         below is unreachable there. The Studio-side entry point is the Android plugin's
+         com.android.tools.idea.wizard.template EP, registered in the optional descriptor.
+         Gated on org.jetbrains.android rather than com.intellij.modules.androidstudio,
+         matching JetBrains' own Kotlin Multiplatform plugin: the extension point is
+         declared in android-plugin.xml (the Android plugin's unconditional descriptor),
+         so it also exists in IntelliJ IDEA whenever the Android plugin is installed.
+         Filename follows the required <pluginId>-$NAME$.xml pattern. -->
+    <depends optional="true" config-file="app.oreshkov.kmp.wizard-android.xml">org.jetbrains.android</depends>
+
     <resource-bundle>messages.KMPWizardBundle</resource-bundle>
 
     <!-- Freemium: the plugin installs and runs for free; the Pro tier (agent + CI

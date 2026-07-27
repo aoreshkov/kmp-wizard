@@ -58,12 +58,62 @@ internal const val NOTIFICATION_GROUP_ID = "app.oreshkov.kmp.wizard.notification
  * Routes a wizard outcome to a balloon notification. Top-level + internal so the
  * success/failure routing can be exercised by a platform-harness test without
  * standing up the whole wizard chain.
+ *
+ * [project] is nullable because the Android Studio path runs inside a template recipe,
+ * which is handed no Project — an application-level balloon is the correct fallback there.
  */
-internal fun notify(project: Project, title: String, content: String, type: NotificationType) {
+internal fun notify(project: Project?, title: String, content: String, type: NotificationType) {
     NotificationGroupManager.getInstance()
         .getNotificationGroup(NOTIFICATION_GROUP_ID)
         .createNotification(title, content, type)
         .notify(project)
+}
+
+/**
+ * Runs `apiDump` once the *first* Gradle resolve of [rootPath] finishes, then unsubscribes.
+ *
+ * [resolveProject] exists because the two wizard paths obtain the [Project] differently:
+ * the IntelliJ IDEA generator already holds one, while the Android Studio recipe is handed
+ * none and has to read it back off the sync task.
+ */
+private class ApiDumpAfterSyncListener(
+    private val rootPath: String,
+    private val resolveProject: (ExternalSystemTaskId) -> Project?,
+) : ExternalSystemTaskNotificationListener {
+
+    private fun isFirstSyncOfProject(projectPath: String, id: ExternalSystemTaskId): Boolean =
+        id.type == ExternalSystemTaskType.RESOLVE_PROJECT &&
+            id.projectSystemId == GradleConstants.SYSTEM_ID &&
+            FileUtil.pathsEqual(projectPath, rootPath)
+
+    private fun unsubscribe() {
+        ExternalSystemProgressNotificationManager.getInstance().removeNotificationListener(this)
+    }
+
+    override fun onSuccess(projectPath: String, id: ExternalSystemTaskId) {
+        if (!isFirstSyncOfProject(projectPath, id)) return
+        unsubscribe()
+        val project = resolveProject(id)
+        if (project == null) {
+            LOG.warn("KMP Wizard: Could not resolve the project for the finished sync — skipping apiDump.")
+            return
+        }
+        runApiDump(project, rootPath)
+    }
+
+    override fun onFailure(projectPath: String, id: ExternalSystemTaskId, exception: Exception) {
+        if (!isFirstSyncOfProject(projectPath, id)) return
+        unsubscribe()
+        // The sync surfaces its own errors; apiDump against a broken build
+        // would only add noise on top of them.
+        LOG.warn("KMP Wizard: Initial Gradle sync failed — skipping apiDump.")
+    }
+
+    override fun onCancel(projectPath: String, id: ExternalSystemTaskId) {
+        if (!isFirstSyncOfProject(projectPath, id)) return
+        unsubscribe()
+        LOG.info("KMP Wizard: Initial Gradle sync cancelled — skipping apiDump.")
+    }
 }
 
 /**
@@ -80,35 +130,21 @@ internal fun notify(project: Project, title: String, content: String, type: Noti
  * cannot leak it.
  */
 internal fun scheduleApiDumpAfterSync(project: Project, rootPath: String) {
-    val notificationManager = ExternalSystemProgressNotificationManager.getInstance()
-    val listener = object : ExternalSystemTaskNotificationListener {
+    ExternalSystemProgressNotificationManager.getInstance()
+        .addNotificationListener(ApiDumpAfterSyncListener(rootPath) { project }, project)
+}
 
-        private fun isFirstSyncOfProject(projectPath: String, id: ExternalSystemTaskId): Boolean =
-            id.type == ExternalSystemTaskType.RESOLVE_PROJECT &&
-                id.projectSystemId == GradleConstants.SYSTEM_ID &&
-                FileUtil.pathsEqual(projectPath, rootPath)
-
-        override fun onSuccess(projectPath: String, id: ExternalSystemTaskId) {
-            if (!isFirstSyncOfProject(projectPath, id)) return
-            notificationManager.removeNotificationListener(this)
-            runApiDump(project, rootPath)
-        }
-
-        override fun onFailure(projectPath: String, id: ExternalSystemTaskId, exception: Exception) {
-            if (!isFirstSyncOfProject(projectPath, id)) return
-            notificationManager.removeNotificationListener(this)
-            // The sync surfaces its own errors; apiDump against a broken build
-            // would only add noise on top of them.
-            LOG.warn("KMP Wizard: Initial Gradle sync failed — skipping apiDump.")
-        }
-
-        override fun onCancel(projectPath: String, id: ExternalSystemTaskId) {
-            if (!isFirstSyncOfProject(projectPath, id)) return
-            notificationManager.removeNotificationListener(this)
-            LOG.info("KMP Wizard: Initial Gradle sync cancelled — skipping apiDump.")
-        }
-    }
-    notificationManager.addNotificationListener(listener, project)
+/**
+ * [scheduleApiDumpAfterSync] for callers with no [Project] handle — the Android Studio
+ * template recipe, which runs while Studio is still assembling the project.
+ *
+ * The listener is registered application-level (no parent disposable is available) and
+ * resolves the project from the sync task itself; it unsubscribes on the first matching
+ * resolve, whatever its outcome.
+ */
+internal fun scheduleApiDumpAfterFirstSync(rootPath: String) {
+    ExternalSystemProgressNotificationManager.getInstance()
+        .addNotificationListener(ApiDumpAfterSyncListener(rootPath, ExternalSystemTaskId::findProject))
 }
 
 private fun runApiDump(project: Project, rootPath: String) {

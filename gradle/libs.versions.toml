@@ -11,6 +11,12 @@ intellij-ide        = "2026.1"
 # Quail's bundled Android tooling is AGP 9.3.1 (libagp-version.jar), well above
 # the ledger's 9.1.1, so the 1.6.1 AGP-compatibility fix is unaffected.
 intellij-since-build = "261"
+# Marketplace org.jetbrains.android, needed for the Android Studio wizard path
+# (com.android.tools.idea.wizard.template). Not a bundled plugin: the unified
+# IntelliJ IDEA distribution ships only android-gradle-dsl, so the real Android
+# plugin is resolved from the Marketplace. Keep this an EXACT build match for
+# intellij-ide — 2026.1 is IU-261.22158.277 — or the sandbox IDE refuses to load it.
+android-plugin       = "261.22158.277"
 changelog            = "2.5.0"
 junit               = "4.13.2"
 
