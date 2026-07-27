@@ -6,6 +6,9 @@
 
 ### Changed
 
+- **Minimum supported IDE lowered back to 2026.1** (`sinceBuild` 262 → 261), reverting the 1.6.1 bump. Android Studio runs a full platform branch behind IntelliJ IDEA — the newest Android Studio on any channel is still `AI-261.*` — so a 262 floor made the plugin impossible to install in *every* existing Android Studio. The AGP concern behind the 1.6.1 bump does not apply to Android Studio, whose bundled tooling is AGP 9.3.1, well above the 9.1.1 that generated projects use.
+- The plugin is now compiled against IntelliJ IDEA 2026.1 rather than 2026.2, so the compile-time API surface matches the declared `sinceBuild`.
+
 ### Deprecated
 
 ### Removed
