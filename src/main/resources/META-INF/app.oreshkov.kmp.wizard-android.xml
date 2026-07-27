@@ -1,0 +1,9 @@
+<!-- Optional descriptor, loaded only when org.jetbrains.android is present (see the
+     <depends optional> entry in plugin.xml). Registers the Android Studio New Project
+     template, which is the only wizard entry point Studio's own NPW renders. -->
+<idea-plugin>
+    <extensions defaultExtensionNs="com.android.tools.idea.wizard.template">
+        <wizardTemplateProvider
+                implementation="app.oreshkov.kmp.wizard.android.KMPWizardTemplateProvider"/>
+    </extensions>
+</idea-plugin>

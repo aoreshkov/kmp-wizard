@@ -86,6 +86,15 @@ dependencies {
         bundledPlugin("org.jetbrains.kotlin")
         bundledPlugin("com.intellij.gradle")
 
+        // Android Studio replaces the platform's New Project dialog with its own NPW,
+        // which never enumerates com.intellij.newProjectWizard.generator — so the
+        // Studio-side entry point has to be the Android plugin's
+        // com.android.tools.idea.wizard.template EP instead (see
+        // META-INF/app.oreshkov.kmp.wizard-android.xml). plugin(), not bundledPlugin():
+        // the unified IDEA distribution no longer bundles org.jetbrains.android.
+        // The dependency is optional at runtime, so IDEs without it still load the plugin.
+        plugin("org.jetbrains.android", libs.versions.android.plugin.get())
+
         pluginVerifier()
         zipSigner()
         // JUnit 4 on the Platform framework is a deliberate choice, not drift:
@@ -148,7 +157,7 @@ val pluginDescription = """
     </table>
     <p>Pro is a one-time purchase. Personal and organization licenses available.</p>
 
-    <p><b>Requirements:</b> IntelliJ IDEA or Android Studio (2026.2+). Generated projects
+    <p><b>Requirements:</b> IntelliJ IDEA or Android Studio (2026.1+). Generated projects
     build with Gradle and run on Android (SDK 24+), Desktop (JVM) and iOS.</p>
 
     <p><b>Resources:</b> the plugin is open source (MIT) —
