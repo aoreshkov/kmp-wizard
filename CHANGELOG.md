@@ -4,12 +4,7 @@
 
 ### Added
 
-- **The wizard now appears in Android Studio.** Android Studio replaces the platform's New Project dialog with its own, template-driven one, which never showed the wizard no matter how it was configured — the plugin installed, loaded, and offered nothing. It is now also contributed as an Android Studio project template, so it shows up under **File | New | New Project** in the **Phone and Tablet** gallery. Android Studio owns its first page, so project name, package name and save location come from there; the feature name, field name, test value, target platforms and Pro options follow on the next page. The IntelliJ IDEA entry point is unchanged. The same template also appears in IntelliJ IDEA when the Android plugin is installed.
-
 ### Changed
-
-- **Minimum supported IDE lowered back to 2026.1** (`sinceBuild` 262 → 261), reverting the 1.6.1 bump. Android Studio runs a full platform branch behind IntelliJ IDEA — the newest Android Studio on any channel is still `AI-261.*` — so a 262 floor made the plugin impossible to install in *every* existing Android Studio. The AGP concern behind the 1.6.1 bump does not apply to Android Studio, whose bundled tooling is AGP 9.3.1, well above the 9.1.1 that generated projects use.
-- The plugin is now compiled against IntelliJ IDEA 2026.1 rather than 2026.2, so the compile-time API surface matches the declared `sinceBuild`.
 
 ### Deprecated
 
@@ -18,6 +13,18 @@
 ### Fixed
 
 ### Security
+
+## 1.7.0 - 2026-07-28
+
+### Added
+
+- **The wizard now appears in Android Studio.** Android Studio replaces the platform's New Project dialog with its own, template-driven one, which never showed the wizard no matter how it was configured — the plugin installed, loaded, and offered nothing. It is now also contributed as an Android Studio project template, so it shows up under **File | New | New Project** in the **Phone and Tablet** gallery. Android Studio owns its first page, so project name, package name and save location come from there; the feature name, field name, test value, target platforms and Pro options follow on the next page. The IntelliJ IDEA entry point is unchanged. The same template also appears in IntelliJ IDEA when the Android plugin is installed.
+
+### Changed
+
+- **Minimum supported IDE lowered back to 2026.1** (`sinceBuild` 262 → 261), reverting the 1.6.1 bump. Android Studio runs a full platform branch behind IntelliJ IDEA — the newest Android Studio on any channel is still `AI-261.*` — so a 262 floor made the plugin impossible to install in *every* existing Android Studio. The AGP concern behind the 1.6.1 bump does not apply to Android Studio, whose bundled tooling is AGP 9.3.1, well above the 9.1.1 that generated projects use.
+- The plugin is now compiled against IntelliJ IDEA 2026.1 rather than 2026.2, so the compile-time API surface matches the declared `sinceBuild`.
+- **Ledger pin bumped to `v1.6.4`.** Generated projects move to Logback `1.6.0` on desktop (the 1.6.x line targets the SLF4J 2.0.18 baseline the project already pins), pick up refreshed GitHub Actions pins in their CI workflows (`actions/checkout` v7.0.1, `ossf/scorecard-action` v2.4.4, `github/codeql-action/upload-sarif` v4.37.3), and ship README / `CLAUDE.md` tech-stack tables that match their own version catalog.
 
 ## 1.6.1 - 2026-07-24
 

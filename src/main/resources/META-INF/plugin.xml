@@ -28,17 +28,17 @@
          the licensable release and drive license-expiry / perpetual-fallback windows.
          Marketplace rules (docs/marketplace/versioning-of-paid-plugins): release-version is
          an integer split into two numbers where the SECOND is a single digit (20211 -> 2021,
-         1), and those encode the plugin's major.minor — so for 1.6.x the only valid value is
-         16 -> (1, 6). It must be non-descending. Official best practice: "when we upload any
+         1), and those encode the plugin's major.minor — so for 1.7.x the only valid value is
+         17 -> (1, 7). It must be non-descending. Official best practice: "when we upload any
          minor updates, we keep the release-version untouched and only increment the version";
          the Marketplace also rejects reusing a release-version with a DIFFERENT release-date.
-         So every patch release in the 1.6 line keeps BOTH 16 and 20260718 from 1.6.0 —
-         only pluginVersion changes. Bump these (to 17 + a new date) only at the next minor,
-         1.7.0. The verifyProductDescriptor Gradle task (wired into `check`) enforces the
+         So every patch release in the 1.7 line keeps BOTH 17 and 20260728 from 1.7.0 —
+         only pluginVersion changes. Bump these (to 18 + a new date) only at the next minor,
+         1.8.0. The verifyProductDescriptor Gradle task (wired into `check`) enforces the
          release-version ↔ pluginVersion match, so a forgotten bump fails the build. -->
     <product-descriptor code="PKMPPROJECTWIZA"
-                        release-date="20260718"
-                        release-version="16"
+                        release-date="20260728"
+                        release-version="17"
                         optional="true"/>
 
     <extensions defaultExtensionNs="com.intellij">
