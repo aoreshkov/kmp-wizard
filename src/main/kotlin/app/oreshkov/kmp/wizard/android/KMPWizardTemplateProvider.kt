@@ -9,6 +9,8 @@ import com.android.tools.idea.wizard.template.FormFactor
 import com.android.tools.idea.wizard.template.LabelWidget
 import com.android.tools.idea.wizard.template.ModuleTemplateData
 import com.android.tools.idea.wizard.template.Separator
+import com.android.tools.idea.wizard.template.StringParameter
+import com.android.tools.idea.wizard.template.StringParameterBuilder
 import com.android.tools.idea.wizard.template.Template
 import com.android.tools.idea.wizard.template.TemplateConstraint
 import com.android.tools.idea.wizard.template.TemplateData
@@ -18,7 +20,6 @@ import com.android.tools.idea.wizard.template.UrlLinkWidget
 import com.android.tools.idea.wizard.template.WizardTemplateProvider
 import com.android.tools.idea.wizard.template.WizardUiContext
 import com.android.tools.idea.wizard.template.booleanParameter
-import com.android.tools.idea.wizard.template.stringParameter
 import com.android.tools.idea.wizard.template.template
 
 /** Matches the generated project's `minSdk`. */
@@ -26,6 +27,19 @@ private const val MIN_API = 24
 
 /** Where the "Pro" checkboxes send users who are not entitled yet. */
 private const val MARKETPLACE_URL = "https://plugins.jetbrains.com/plugin/31786-kmp-project-wizard"
+
+/**
+ * Stands in for the platform's `stringParameter { }` DSL.
+ *
+ * That helper is `inline` and its body still calls the pre-`loggable`
+ * StringParameterBuilder constructor Studio deprecated ("Specify loggable parameter") —
+ * inlining surfaces the deprecation at every call site here with no way to opt out.
+ * Building the parameter directly selects the current constructor and pins
+ * `loggable = false` (the library default, and the right value regardless: these fields
+ * carry user-authored names that must not reach Studio's template usage analytics).
+ */
+private fun stringParameter(block: StringParameterBuilder.() -> Unit): StringParameter =
+    StringParameterBuilder(loggable = false).apply(block).build()
 
 /**
  * Android Studio entry point for the wizard.

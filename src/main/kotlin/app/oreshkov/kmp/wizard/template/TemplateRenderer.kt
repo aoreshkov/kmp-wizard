@@ -47,6 +47,7 @@ object TemplateRenderer {
             "{{PACKAGE_PATH}}"       to settings.packageName.replace('.', '/'),
             "{{APP_NAME}}"           to settings.appName.toPascalCase(),
             "{{APP_NAME_LOWER}}"     to settings.appName.toSnakeCase(),
+            "{{APP_NAME_LOWER_FLAT}}" to settings.appName.toLowerFlatCase(),
             "{{FEATURE_NAME}}"       to featurePascal,
             "{{FEATURE_NAME_CAMEL}}" to featureCamel,
             "{{FEATURE_NAME_LOWER}}" to featureSnake,
@@ -79,6 +80,16 @@ object TemplateRenderer {
     internal fun String.toUpperSnakeCase(): String =
         toSnakeCase().uppercase()
 
+    // The lowercase form of the PascalCase app name — NOT the snake_case one.
+    // The templates set `rootProject.name = {{APP_NAME}}` (PascalCase), Gradle derives a
+    // subproject's implicit `group` from `rootProject.name`, and Compose Multiplatform
+    // derives the generated Res package from that group, lowercased
+    // ("{group}.{module}.generated.resources"). So the package prefix generated projects
+    // must import is exactly `toPascalCase().lowercase()` — deriving it from toPascalCase
+    // rather than re-flattening the segments keeps the two from drifting apart.
+    internal fun String.toLowerFlatCase(): String =
+        toPascalCase().lowercase()
+
     // Single pass over the input (one scan, one allocation) instead of one full
     // String.replace per placeholder; also order-independent by construction.
     internal fun String.applySubstitutions(substitutions: Map<String, String>): String {
@@ -108,7 +119,7 @@ object TemplateRenderer {
         // Apply substitutions to the path itself so directories/files named
         // after the package, app, or feature are renamed correctly.
         val substitutedPath = templatePath.applySubstitutions(substitutions)
-        
+
         // Restore .gitignore name in the destination
         val destPath = if (substitutedPath == "gitignore.txt") ".gitignore" else substitutedPath
         val destFile = targetDir.resolve(destPath)

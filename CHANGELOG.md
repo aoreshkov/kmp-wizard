@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- **Generated projects no longer fail to compile when the project name is more than one word.** Compose Multiplatform derives the package of its generated `Res` accessor class from the Gradle project group, which in turn comes from `rootProject.name` — lowercased with the words run together. The wizard was rendering those `import` statements in snake_case instead, so a project named `My Awesome App` imported `my_awesome_app.feature.…` from a package actually called `myawesomeapp.feature.…`, and every screen and DI module that reads a string resource failed to resolve. Single-word project names were unaffected, which is why this went unnoticed.
+
 ### Security
 
 ## 1.7.0 - 2026-07-28
