@@ -341,6 +341,7 @@ val templateSubstitutions = listOf(
     "app/oreshkov/ledger"           to "{{PACKAGE_PATH}}",
 
     // ── App identity  ──────────────────────────────────────────────────────
+    "import ledger"                 to "import {{APP_NAME_LOWER_FLAT}}",
     "Ledger"                        to "{{APP_NAME}}",
     "ledger"                        to "{{APP_NAME_LOWER}}",   // e.g. "ledger.db", module ids
 
