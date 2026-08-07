@@ -6,6 +6,8 @@
 
 ### Changed
 
+- **Ledger pin bumped to `v1.6.5`.** Generated projects now pin `packageOfResClass` in every module that generates a Compose `Res` class, so their resource accessors sit under `<your.package>.<module path>.resources` instead of a package derived from the project name — renaming the root project can no longer repackage every module's resources at once. They also move to the Koin compiler `1.1.0`, which verifies the whole dependency graph once at each `@KoinApplication` entry point rather than module by module, and pick up Navigation 3 runtime `1.1.5`, Room `3.0.1` and Logback `1.6.1`.
+
 ### Deprecated
 
 ### Removed
