@@ -341,7 +341,14 @@ val templateSubstitutions = listOf(
     "app/oreshkov/ledger"           to "{{PACKAGE_PATH}}",
 
     // ── App identity  ──────────────────────────────────────────────────────
-    "import ledger"                 to "import {{APP_NAME_LOWER_FLAT}}",
+    // Nothing here needs the app name as a Kotlin package segment: since ledger v1.6.5
+    // every module that generates a Compose `Res` class pins `packageOfResClass` under
+    // the project's own package, so resource accessors come in through the
+    // {{PACKAGE_NAME}} rule above rather than through a package derived from
+    // rootProject.name. If a future ledger module ever omits that pin, its accessors
+    // revert to CMP's "{group}.{module}.generated.resources" default — which resolves
+    // from rootProject.name — and would need a rule keyed on the FLAT lowercase app
+    // name here, not the snake_case one below.
     "Ledger"                        to "{{APP_NAME}}",
     "ledger"                        to "{{APP_NAME_LOWER}}",   // e.g. "ledger.db", module ids
 

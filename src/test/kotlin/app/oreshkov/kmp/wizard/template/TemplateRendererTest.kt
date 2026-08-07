@@ -69,33 +69,6 @@ class TemplateRendererTest {
         assertEquals("my_awesome_app", s["{{APP_NAME_LOWER}}"])
     }
 
-    // Regression: a multi-word app name is the only case where flat and snake differ, and
-    // the Compose Multiplatform Res package (derived from rootProject.name via Gradle's
-    // implicit group, lowercased) needs the flat form. Feeding it the snake form left
-    // generated projects importing `my_awesome_app.…` from a `myawesomeapp.…` package —
-    // they did not compile. SubstitutionValueSymmetryTest cannot catch this: it renders
-    // with the ledger's own single-word "Ledger", where the two forms coincide.
-    @Test fun `app name lower flat drops separators and is not snake_case`() {
-        val s = TemplateRenderer.buildSubstitutions(
-            defaultSettings.copy(appName = "My Awesome App")
-        )
-        assertEquals("myawesomeapp", s["{{APP_NAME_LOWER_FLAT}}"])
-    }
-
-    // The contract behind {{APP_NAME_LOWER_FLAT}}: whatever Gradle/CMP derive from
-    // `rootProject.name = {{APP_NAME}}` is that PascalCase name lowercased. Pin it so a
-    // future change to either converter can't silently break the other.
-    @Test fun `app name lower flat is the PascalCase app name lowercased`() {
-        listOf("My Awesome App", "my-cool-app", "myJSONApp", "Ledger").forEach { appName ->
-            val s = TemplateRenderer.buildSubstitutions(defaultSettings.copy(appName = appName))
-            assertEquals(
-                "flat form must equal the lowercased {{APP_NAME}} for \"$appName\"",
-                s["{{APP_NAME}}"]?.lowercase(),
-                s["{{APP_NAME_LOWER_FLAT}}"],
-            )
-        }
-    }
-
     @Test fun `test value name is mapped correctly`() {
         val s = TemplateRenderer.buildSubstitutions(
             defaultSettings.copy(testValueName = "Rent")
