@@ -87,8 +87,15 @@ object TemplateRenderer {
     // ("{group}.{module}.generated.resources"). So the package prefix generated projects
     // must import is exactly `toPascalCase().lowercase()` — deriving it from toPascalCase
     // rather than re-flattening the segments keeps the two from drifting apart.
+    //
+    // The leading-underscore step mirrors CMP's own asUnderscoredIdentifier(), which it
+    // applies to the whole group string: an app named "2Do" yields the package
+    // `_2do.feature…`, so the rendered import has to carry the underscore too. CMP's other
+    // step there ('-' → '_') needs no mirror — toIdentifierSegments has already dropped
+    // every non-alphanumeric.
     internal fun String.toLowerFlatCase(): String =
         toPascalCase().lowercase()
+            .let { if (it.firstOrNull()?.isDigit() == true) "_$it" else it }
 
     // Single pass over the input (one scan, one allocation) instead of one full
     // String.replace per placeholder; also order-independent by construction.

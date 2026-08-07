@@ -84,7 +84,8 @@ class TemplateRendererTest {
 
     // The contract behind {{APP_NAME_LOWER_FLAT}}: whatever Gradle/CMP derive from
     // `rootProject.name = {{APP_NAME}}` is that PascalCase name lowercased. Pin it so a
-    // future change to either converter can't silently break the other.
+    // future change to either converter can't silently break the other. Digit-leading
+    // names are the one documented exception — covered separately below.
     @Test fun `app name lower flat is the PascalCase app name lowercased`() {
         listOf("My Awesome App", "my-cool-app", "myJSONApp", "Ledger").forEach { appName ->
             val s = TemplateRenderer.buildSubstitutions(defaultSettings.copy(appName = appName))
@@ -94,6 +95,18 @@ class TemplateRendererTest {
                 s["{{APP_NAME_LOWER_FLAT}}"],
             )
         }
+    }
+
+    // CMP runs asUnderscoredIdentifier() over the group string, which prefixes '_' when it
+    // starts with a digit — so a project named "2Do" gets the package `_2do.feature…`.
+    // Only the flat form is sanitised; {{APP_NAME}} and the snake form keep the bare digit,
+    // because they name the Gradle project and file/module ids, where a digit is legal.
+    @Test fun `digit-leading app name gets the underscore CMP prefixes onto the package`() {
+        val s = TemplateRenderer.buildSubstitutions(defaultSettings.copy(appName = "2Do"))
+        assertEquals("_2do", s["{{APP_NAME_LOWER_FLAT}}"])
+        // digit→Upper is a segment boundary, so "2Do" stays two segments here.
+        assertEquals("2Do", s["{{APP_NAME}}"])
+        assertEquals("2_do", s["{{APP_NAME_LOWER}}"])
     }
 
     @Test fun `test value name is mapped correctly`() {

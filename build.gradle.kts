@@ -341,7 +341,21 @@ val templateSubstitutions = listOf(
     "app/oreshkov/ledger"           to "{{PACKAGE_PATH}}",
 
     // ── App identity  ──────────────────────────────────────────────────────
-    "import ledger"                 to "import {{APP_NAME_LOWER_FLAT}}",
+    // Compose Multiplatform's generated Res class lands in
+    // "{group}.{module}.generated.resources", and Gradle derives a subproject's
+    // implicit group from rootProject.name — which the templates set to {{APP_NAME}}
+    // (PascalCase). CMP lowercases it and runs asUnderscoredIdentifier() over it, so the
+    // package root is the FLAT lowercase app name, never the snake_case one that the
+    // bare "ledger" rule below would produce.
+    //
+    // Keyed on the package roots rather than on "import ledger": these fire wherever the
+    // package is written — imports, fully-qualified references, KDoc, Kover/ProGuard
+    // filters — not only on Kotlin import syntax. ":core" and ":feature" are the ledger's
+    // only module groups; a new top-level group holding resources would need a line here.
+    // Safe to key on the bare "ledger." prefix because the two package rules above have
+    // already rewritten every app.oreshkov.ledger.* occurrence to {{PACKAGE_NAME}}.*.
+    "ledger.core."                  to "{{APP_NAME_LOWER_FLAT}}.core.",
+    "ledger.feature."               to "{{APP_NAME_LOWER_FLAT}}.feature.",
     "Ledger"                        to "{{APP_NAME}}",
     "ledger"                        to "{{APP_NAME_LOWER}}",   // e.g. "ledger.db", module ids
 

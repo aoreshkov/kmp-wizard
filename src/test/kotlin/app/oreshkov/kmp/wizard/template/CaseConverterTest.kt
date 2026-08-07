@@ -46,6 +46,9 @@ class CaseConverterTest(
             // Letter→digit is deliberately not a boundary: "v2" / "feature2name" stay whole.
             arrayOf("feature2name", "Feature2name", "feature2name", "feature2name", "FEATURE2NAME", "feature2name"),
             arrayOf("v2Api", "V2Api", "v2Api", "v2_api", "V2_API", "v2api"),
+            // Only the flat form is a Kotlin package segment, so only it gets the leading
+            // '_' that Compose Multiplatform's asUnderscoredIdentifier() would add.
+            arrayOf("2do", "2do", "2do", "2do", "2DO", "_2do"),
             // Acronyms split on the acronym→Word boundary and round-trip cleanly.
             arrayOf("myJSONParser", "MyJsonParser", "myJsonParser", "my_json_parser", "MY_JSON_PARSER", "myjsonparser"),
             arrayOf("HTTPServer", "HttpServer", "httpServer", "http_server", "HTTP_SERVER", "httpserver"),
