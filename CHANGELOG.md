@@ -6,17 +6,23 @@
 
 ### Changed
 
-- **Ledger pin bumped to `v1.6.5`.** Generated projects now pin `packageOfResClass` in every module that generates a Compose `Res` class, so their resource accessors sit under `<your.package>.<module path>.resources` instead of a package derived from the project name — renaming the root project can no longer repackage every module's resources at once. They also move to the Koin compiler `1.1.0`, which verifies the whole dependency graph once at each `@KoinApplication` entry point rather than module by module, and pick up Navigation 3 runtime `1.1.5`, Room `3.0.1` and Logback `1.6.1`.
-
 ### Deprecated
 
 ### Removed
 
 ### Fixed
 
-- **Generated projects no longer fail to compile when the project name is more than one word.** Compose Multiplatform derives the package of its generated `Res` accessor class from the Gradle project group, which in turn comes from `rootProject.name` — lowercased with the words run together. The wizard was rendering those `import` statements in snake_case instead, so a project named `My Awesome App` imported `my_awesome_app.feature.…` from a package actually called `myawesomeapp.feature.…`, and every screen and DI module that reads a string resource failed to resolve. Single-word project names were unaffected, which is why this went unnoticed.
-
 ### Security
+
+## 1.7.1 - 2026-08-07
+
+### Changed
+
+- **Ledger pin bumped to `v1.6.5`.** Generated projects now pin `packageOfResClass` in every module that generates a Compose `Res` class, so their resource accessors sit under `<your.package>.<module path>.resources` instead of a package derived from the project name — renaming the root project can no longer repackage every module's resources at once. They also move to the Koin compiler `1.1.0`, which verifies the whole dependency graph once at each `@KoinApplication` entry point rather than module by module, and pick up Navigation 3 runtime `1.1.5`, Room `3.0.1` and Logback `1.6.1`.
+
+### Fixed
+
+- **Generated projects no longer fail to compile when the project name is more than one word.** Compose Multiplatform derives the package of its generated `Res` accessor class from the Gradle project group, which in turn comes from `rootProject.name` — lowercased with the words run together. The wizard was rendering those `import` statements in snake_case instead, so a project named `My Awesome App` imported `my_awesome_app.feature.…` from a package actually called `myawesomeapp.feature.…`, and every screen and DI module that reads a string resource failed to resolve. Single-word project names were unaffected, which is why this went unnoticed.
 
 ## 1.7.0 - 2026-07-28
 
