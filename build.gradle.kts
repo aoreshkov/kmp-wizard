@@ -322,6 +322,17 @@ val templateBinaryExtensions = setOf(
 )
 
 /**
+ * File names that Gradle/Ant *default excludes* would silently drop from
+ * processResources and the plugin jar, mapped to the neutral name they are stored
+ * under inside the templates tree. Matched on the file name at any depth, and
+ * reversed at render time by TemplateRenderer — the two tables must stay in sync.
+ */
+val templateRenamedFiles = mapOf(
+    ".gitignore"     to "gitignore.txt",
+    ".gitattributes" to "gitattributes.txt"
+)
+
+/**
  * Ordered substitution table: (literal → placeholder).
  *
  * Rules:
@@ -418,6 +429,10 @@ abstract class GenerateTemplatesTask : DefaultTask() {
     @get:Input
     abstract val binaryExtensions: SetProperty<String>
 
+    /** File name → template file name, for names Ant default excludes would drop. */
+    @get:Input
+    abstract val renamedFiles: MapProperty<String, String>
+
     @get:OutputDirectory
     abstract val templatesDir: DirectoryProperty
 
@@ -430,6 +445,7 @@ abstract class GenerateTemplatesTask : DefaultTask() {
         val skipFiles  = excludedFiles.get()
         val skipSuffixes = excludedFileSuffixes.get()
         val binaryExts = binaryExtensions.get()
+        val renames    = renamedFiles.get()
 
         fun String.applySubstitutions(): String =
             subs.fold(this) { acc, (literal, placeholder) -> acc.replace(literal, placeholder) }
@@ -470,8 +486,14 @@ abstract class GenerateTemplatesTask : DefaultTask() {
                     .invariantSeparatorsPath
                     .applySubstitutions()
 
-                // Special handling for .gitignore to ensure it's not hidden/ignored by Gradle
-                val templateFileName = if (relativePath == ".gitignore") "gitignore.txt" else relativePath
+                // Names Ant default excludes would drop (.gitignore, .gitattributes) are
+                // stored under a neutral name; TemplateRenderer restores them on render.
+                val templateFileName = renames[relativePath.substringAfterLast('/')]
+                    ?.let { renamed ->
+                        val dir = relativePath.substringBeforeLast('/', "")
+                        if (dir.isEmpty()) renamed else "$dir/$renamed"
+                    }
+                    ?: relativePath
                 allTemplatePaths.add(templateFileName.replace(File.separatorChar, '/'))
 
                 val destFile = outputDir.resolve(templateFileName)
@@ -564,6 +586,7 @@ val generateTemplates = tasks.register<GenerateTemplatesTask>("generateTemplates
     excludedFiles.set(templateExcludedFiles)
     excludedFileSuffixes.set(templateExcludedFileSuffixes)
     binaryExtensions.set(templateBinaryExtensions)
+    renamedFiles.set(templateRenamedFiles)
     templatesDir.set(layout.buildDirectory.dir("generated-resources/templates"))
 }
 

@@ -107,9 +107,15 @@ class TemplateRenderIntegrationTest {
     @Test fun `special files are rendered with their template-pipeline mechanics`() {
         TemplateRenderer.render(defaultSettings, tempDir)
 
-        // gitignore.txt is restored to its real .gitignore name (and the source name is gone).
+        // Dotfiles Ant's default excludes would drop are stored under a neutral name and
+        // restored here (and the storage name is gone).
         assertTrue(".gitignore should be restored", tempDir.resolve(".gitignore").isFile)
         assertFalse("gitignore.txt should not be emitted", tempDir.resolve("gitignore.txt").exists())
+        assertTrue(".gitattributes should be restored", tempDir.resolve(".gitattributes").isFile)
+        assertFalse(
+            "gitattributes.txt should not be emitted",
+            tempDir.resolve("gitattributes.txt").exists(),
+        )
 
         // The Gradle wrapper script is present; its executable bit is restored where the
         // filesystem tracks one (skip on Windows, which has no POSIX exec bit).

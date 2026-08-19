@@ -10,6 +10,17 @@ object TemplateRenderer {
         "jar", "zip", "keystore", "ico", "icns",
     )
 
+    /**
+     * Template file name → the real name it is written out under. Dotfiles that Ant's
+     * default excludes would drop from the plugin jar are stored under a neutral name
+     * by the `generateTemplates` build task; this is the reverse of its
+     * `templateRenamedFiles` table, and the two must stay in sync.
+     */
+    private val RESTORED_FILE_NAMES = mapOf(
+        "gitignore.txt" to ".gitignore",
+        "gitattributes.txt" to ".gitattributes",
+    )
+
     // Segment boundaries: lower→Upper (camelCase), acronym→Word (HTTPServer → HTTP|Server),
     // digit→Upper (v2Api → v2|Api), and runs of non-alphanumerics. Letter→digit is
     // deliberately NOT a boundary so "v2" and "feature2name" stay single segments.
@@ -109,8 +120,8 @@ object TemplateRenderer {
         // after the package, app, or feature are renamed correctly.
         val substitutedPath = templatePath.applySubstitutions(substitutions)
 
-        // Restore .gitignore name in the destination
-        val destPath = if (substitutedPath == "gitignore.txt") ".gitignore" else substitutedPath
+        // Restore the real dotfile names (.gitignore, .gitattributes) in the destination
+        val destPath = restoreFileName(substitutedPath)
         val destFile = targetDir.resolve(destPath)
         destFile.parentFile.mkdirs()
 
@@ -130,6 +141,16 @@ object TemplateRenderer {
 
         // Restore the executable bit for the Gradle wrapper script
         if (destPath.endsWith("gradlew")) destFile.setExecutable(true)
+    }
+
+    /**
+     * Maps a template path back to the path it is written out under, undoing the
+     * dotfile renames the build applied. Internal so the round trip is unit-testable.
+     */
+    internal fun restoreFileName(path: String): String {
+        val restored = RESTORED_FILE_NAMES[path.substringAfterLast('/')] ?: return path
+        val dir = path.substringBeforeLast('/', "")
+        return if (dir.isEmpty()) restored else "$dir/$restored"
     }
 
     /**

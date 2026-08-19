@@ -4,7 +4,11 @@
 
 ### Added
 
+- **Generated projects now ship a `.gitattributes`.** It normalizes text files to LF on commit, pins `gradlew` and the `apiDump` ABI dumps to LF in the working tree, and leaves `gradlew.bat` and binary assets unconverted — so a Windows checkout no longer reports every ABI dump as modified after a build, and the wrapper script still runs under Git Bash and WSL. Like `.gitignore`, the file is stored in the plugin jar under a neutral name (`gitattributes.txt`) because Gradle's Ant default excludes would otherwise drop it, and is renamed back on render; the rename table replaces the previous one-off `.gitignore` special case.
+
 ### Changed
+
+- **Ledger pin bumped to `v1.7.0`.** The generated data layer becomes replication-ready: the entity carries `updatedAt`, `isDeleted` and `pendingSync` sync metadata that never reaches the domain model, deletes are soft (a tombstoned row is hidden from reads but retained so the deletion can propagate), and the repository stamps the last-write-wins timestamp on every local write from an injected `kotlin.time.Clock` — which also makes those writes deterministically testable. The DAO gains the replication-facing queries that contract implies (`getPendingSync`, `getByIds`, `upsert`, `clearPendingSyncIfUnchanged`), each covered by tests. `core:navigation` adds `LocalAccountAction`, an app-bar slot that renders nothing unless the app root provides one, so a feature screen can surface an account action without depending on an auth feature. Versions move to Navigation 3 runtime `1.1.6`, Logback `1.6.3` and Bouncy Castle `1.85.2`, and the CI workflow action pins are refreshed.
 
 ### Deprecated
 
