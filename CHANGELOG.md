@@ -6,6 +6,8 @@
 
 ### Changed
 
+- **Ledger pin bumped to `v1.8.0`.** Generated projects move to Compose Multiplatform 1.12.0 (from 1.11.1), with Material3 and the Material3 Adaptive Navigation Suite on the aligned 1.12.0-alpha03, plus Room 3.0.2, Navigation 3 runtime 1.1.7, binary-compatibility-validator 0.18.2 and SLF4J 2.0.19. The desktop window adopts the Window API v2 (`androidx.compose.ui.window.v2`) — still experimental, so expect an import change when it stabilizes — which fixes two long-standing desktop defects: the minimum size is now Dp-typed and scales with display density instead of being applied in unscaled AWT device pixels, and new windows open centred on screen rather than cascading from the last position. Compose Hot Reload is wired into `:desktopApp`, so a generated project gets `./gradlew :desktopApp:hotRun` for applying composable edits without a restart, alongside `:desktopApp:hotMcpServer` and a repository-level `.mcp.json` that points a coding agent at the running app — on Windows that server entry needs the `gradlew.bat` form registered locally, since the checked-in config invokes `./gradlew`. The AGP 9.1.1 and Kotlin 2.4.0 pins are now documented and suppressed in the generated version catalog (both are held at what the bundled IDEA plugin supports), the Koin convention plugin sets `aiAssist = false`, and `androidApp`'s unused local unit-test configuration is gone.
+
 ### Deprecated
 
 ### Removed
