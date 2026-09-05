@@ -1,5 +1,5 @@
 [versions]
-kotlin               = "2.4.0"
+kotlin               = "2.4.10"
 intellij-platform   = "2.18.1"
 # Compile against the LOWEST supported IDE, not the newest: the Plugin Verifier
 # flags any API introduced after sinceBuild, and Android Studio trails IntelliJ
