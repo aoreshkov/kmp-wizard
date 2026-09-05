@@ -6,10 +6,6 @@
 
 ### Changed
 
-- **Ledger pin bumped to `v1.8.0`.** Generated projects move to Compose Multiplatform 1.12.0 (from 1.11.1), with Material3 and the Material3 Adaptive Navigation Suite on the aligned 1.12.0-alpha03, plus Room 3.0.2, Navigation 3 runtime 1.1.7, binary-compatibility-validator 0.18.2 and SLF4J 2.0.19. The desktop window adopts the Window API v2 (`androidx.compose.ui.window.v2`) — still experimental, so expect an import change when it stabilizes — which fixes two long-standing desktop defects: the minimum size is now Dp-typed and scales with display density instead of being applied in unscaled AWT device pixels, and new windows open centred on screen rather than cascading from the last position. Compose Hot Reload is wired into `:desktopApp`, so a generated project gets `./gradlew :desktopApp:hotRun` for applying composable edits without a restart, alongside `:desktopApp:hotMcpServer` and a repository-level `.mcp.json` that points a coding agent at the running app — on Windows that server entry needs the `gradlew.bat` form registered locally, since the checked-in config invokes `./gradlew`. The AGP 9.1.1 and Kotlin 2.4.0 pins are now documented and suppressed in the generated version catalog (both are held at what the bundled IDEA plugin supports), the Koin convention plugin sets `aiAssist = false`, and `androidApp`'s unused local unit-test configuration is gone.
-
-- **`KMPWizardBundle` delegates to `DynamicBundle` instead of inheriting from it.** The `DynamicBundle(String)` constructor a subclass needs carried only `@Obsolete` through 2026.2 and became a real `@Deprecated` in 2026.3, where the Plugin Verifier began reporting it — so the Marketplace flagged one deprecated API usage against an otherwise compatible 1.8.0. The bundle now holds a `DynamicBundle(KMPWizardBundle::class.java, BUNDLE)` instance and forwards `message()` to it, which is the replacement JetBrains' deprecation notice names. Resolution is unchanged: the deprecated constructor derived the classloader from `javaClass` on the subclass, and the replacement takes it from the class passed in — the same class either way. No call site changes, since every use goes through `KMPWizardBundle.message(...)`.
-
 ### Deprecated
 
 ### Removed
@@ -17,6 +13,24 @@
 ### Fixed
 
 ### Security
+
+## 1.9.0 - 2026-09-05
+
+### Added
+
+- **Generated projects get Compose Hot Reload on desktop.** `./gradlew :desktopApp:hotRun` applies composable edits to the running window without a restart, so UI iteration no longer costs a full relaunch. The hot-run JVM is provisioned automatically (a JetBrains Runtime is downloaded and cached under `<GRADLE_USER_HOME>/chr/jbr` for that JVM only — it ships the enhanced class redefinition hot reload needs), while ordinary compilation keeps using the project's daemon JDK. The same plugin also contributes `:desktopApp:hotMcpServer` and a repository-level `.mcp.json`, which lets a coding agent reload, screenshot, read the semantic tree and drive the running app — on Windows that server entry needs the `gradlew.bat` form registered locally, since the checked-in config invokes `./gradlew`.
+
+### Changed
+
+- **Ledger pin bumped to `v1.8.0`.** Generated projects move to Compose Multiplatform 1.12.0 (from 1.11.1), with Material3 and the Material3 Adaptive Navigation Suite on the aligned 1.12.0-alpha03, plus Room 3.0.2, Navigation 3 runtime 1.1.7, binary-compatibility-validator 0.18.2 and SLF4J 2.0.19.
+- **The desktop window adopts the Compose Window API v2** (`androidx.compose.ui.window.v2`): initial bounds come from a bounds provider and the minimum size is Dp-typed. The API is still experimental and its package may move before it stabilizes, so expect an import change — not a rewrite.
+- **Generated build files are tidier and quieter.** The AGP 9.1.1 and Kotlin 2.4.0 pins are now documented and suppressed in the version catalog (both are deliberately held at what the bundled IDE plugin supports, so currency inspections and Dependabot no longer flag them), the Koin convention plugin sets `aiAssist = false` to silence a vendor call-to-action during compilation, and `androidApp`'s unused local unit-test configuration is gone.
+
+### Fixed
+
+- **The desktop window's minimum size now scales with display density.** It was previously applied through AWT in unscaled device pixels, so on a 200%-scaled display the floor was half its intended physical size while the initial size scaled correctly.
+- **New desktop windows open centred on screen** instead of cascading from the last window position, which on a multi-monitor setup could place a new window on whichever display the previous one had used.
+- **The plugin no longer uses a deprecated IntelliJ Platform API.** `KMPWizardBundle` now delegates to a `DynamicBundle` instance rather than inheriting from one: the `DynamicBundle(String)` constructor a subclass needs carried only `@Obsolete` through 2026.2 and became a real `@Deprecated` in 2026.3, where the Plugin Verifier began reporting it — so the Marketplace flagged one deprecated API usage against an otherwise compatible 1.8.0. Message resolution is unchanged, and no call sites changed.
 
 ## 1.8.0 - 2026-08-19
 

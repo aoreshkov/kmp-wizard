@@ -37,8 +37,8 @@
          1.8.0. The verifyProductDescriptor Gradle task (wired into `check`) enforces the
          release-version ↔ pluginVersion match, so a forgotten bump fails the build. -->
     <product-descriptor code="PKMPPROJECTWIZA"
-                        release-date="20260819"
-                        release-version="18"
+                        release-date="20260905"
+                        release-version="19"
                         optional="true"/>
 
     <extensions defaultExtensionNs="com.intellij">
