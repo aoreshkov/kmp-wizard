@@ -1,6 +1,6 @@
 [versions]
 kotlin               = "2.4.10"
-intellij-platform   = "2.18.1"
+intellij-platform   = "2.19.0"
 # Compile against the LOWEST supported IDE, not the newest: the Plugin Verifier
 # flags any API introduced after sinceBuild, and Android Studio trails IntelliJ
 # IDEA by a full branch (see intellij-since-build).
@@ -17,6 +17,12 @@ intellij-since-build = "261"
 # plugin is resolved from the Marketplace. Keep this an EXACT build match for
 # intellij-ide — 2026.1 is IU-261.22158.277 — or the sandbox IDE refuses to load it.
 android-plugin       = "261.22158.277"
+# Android Studio releases the Plugin Verifier checks (verifyPlugin) — recommended()
+# never selects Android Studio. Bump manually from the Android Studio releases list
+# (plugins.jetbrains.com/docs/intellij/android-studio-releases-list.html): "stable" =
+# newest stable release, "next" = newest build on the following branch (canary/RC).
+android-studio-stable = "2026.1.4.8"
+android-studio-next   = "2026.2.1.6"
 changelog            = "2.5.0"
 junit               = "4.13.2"
 

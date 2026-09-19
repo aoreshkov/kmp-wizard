@@ -194,6 +194,11 @@ and the build **fails** (a loud safety net, not silently empty `changeNotes`).
 
 ### 7. Verify
 
+First refresh `android-studio-stable` / `android-studio-next` in `gradle/libs.versions.toml`
+from the [Android Studio releases list](https://plugins.jetbrains.com/docs/intellij/android-studio-releases-list.html)
+(newest stable release; newest canary/RC on the following branch). Dependabot can't bump them —
+they are IDE release numbers, not Maven coordinates — and `recommended()` never verifies Android Studio.
+
 ```
 ./gradlew build
 ./gradlew verifyPlugin

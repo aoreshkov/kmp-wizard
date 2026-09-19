@@ -13,7 +13,7 @@ An IntelliJ IDEA plugin ("KMP Project Wizard") that adds a **New Project** gener
 ./gradlew build               # compile + test (downloads + generates templates as needed; first run needs network)
 ./gradlew runIde              # launch a sandbox IDE with the plugin loaded
 ./gradlew test                # run unit tests
-./gradlew verifyPlugin        # IntelliJ Plugin Verifier against recommended IDEs
+./gradlew verifyPlugin        # IntelliJ Plugin Verifier against recommended IDEs + Android Studio (stable & next, pinned in libs.versions.toml)
 ./gradlew publishPlugin       # publish to JetBrains Marketplace (needs PUBLISH_TOKEN)
 ```
 
