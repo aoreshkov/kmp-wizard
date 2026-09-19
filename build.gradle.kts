@@ -1,3 +1,4 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
@@ -221,6 +222,10 @@ intellijPlatform {
     pluginVerification {
         ides {
             recommended()
+            // recommended() only picks JetBrains IDEs, so Android Studio (a supported
+            // target with its own wizard entry point) would otherwise never be verified.
+            create(IntelliJPlatformType.AndroidStudio, libs.versions.android.studio.stable.get())
+            create(IntelliJPlatformType.AndroidStudio, libs.versions.android.studio.next.get())
         }
     }
 }
