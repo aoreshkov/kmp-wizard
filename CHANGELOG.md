@@ -6,18 +6,25 @@
 
 ### Changed
 
-- **Ledger pin bumped to `v1.9.0`.** Generated projects now declare their domain models and `List` stable to the Compose compiler (`compose_stability.conf`), so composables that take them can skip recomposition, and the selected top-level section survives process death on Android. Dependency upgrades: Room 3.0.3, `androidx.sqlite` 2.7.1, Kermit 2.2.0, Robolectric 4.17 (Android host tests now run on API 37), the Koin compiler plugin 1.2.1 (desktop compile-time graph checks re-enabled), KSP 2.3.10 and the Gradle wrapper 9.7.1. DataStore now comes from the `-core` artifacts the KMP guide names. `LabeledField` takes a `modifier` parameter, and Kover's coverage floors are higher now that Room's generated code is excluded.
-
 ### Deprecated
 
 ### Removed
 
 ### Fixed
 
+### Security
+
+## 1.9.1 - 2026-09-19
+
+### Changed
+
+- **Ledger pin bumped to `v1.9.0`.** Generated projects now declare their domain models and `List` stable to the Compose compiler (`compose_stability.conf`), so composables that take them can skip recomposition, and the selected top-level section survives process death on Android. Dependency upgrades: Room 3.0.3, `androidx.sqlite` 2.7.1, Kermit 2.2.0, Robolectric 4.17 (Android host tests now run on API 37), the Koin compiler plugin 1.2.1 (desktop compile-time graph checks re-enabled), KSP 2.3.10 and the Gradle wrapper 9.7.1. DataStore now comes from the `-core` artifacts the KMP guide names. `LabeledField` takes a `modifier` parameter, and Kover's coverage floors are higher now that Room's generated code is excluded.
+
+### Fixed
+
 - **The hot-reload MCP server in the generated `.mcp.json` now starts on Windows.** It launches through the Gradle wrapper JAR instead of `./gradlew`, so the `gradlew.bat` workaround 1.9.0 described is no longer needed.
 - **Generated projects' DataStore settings recover from corruption on iOS** as well as on Android and desktop.
-
-### Security
+- **Android backup rules now exclude whole domains as intended**, and the opt-in Compose compiler reports (`-Pledger.composeCompilerReports=true`) are written as readable files on Windows instead of hidden NTFS streams.
 
 ## 1.9.0 - 2026-09-05
 

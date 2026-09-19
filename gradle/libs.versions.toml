@@ -22,7 +22,7 @@ android-plugin       = "261.22158.277"
 # (plugins.jetbrains.com/docs/intellij/android-studio-releases-list.html): "stable" =
 # newest stable release, "next" = newest build on the following branch (canary/RC).
 android-studio-stable = "2026.1.4.8"
-android-studio-next   = "2026.2.1.6"
+android-studio-next   = "2026.2.2.1"
 changelog            = "2.5.0"
 junit               = "4.13.2"
 
