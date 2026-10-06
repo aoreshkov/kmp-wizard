@@ -6,11 +6,19 @@
 
 ### Changed
 
-- **Ledger pin bumped to `v1.9.1`.** Generated projects move to Kotlin 2.4.20, which is officially tested with the AGP 9.1.1 they pin. Other dependency upgrades: Compose Multiplatform 1.12.1, with Material3 Adaptive 1.3.0-rc01 and `navigation3-ui` 1.1.2 aligned to it, KSP 2.3.12 (the KSP pin is gone), Kover 0.9.11, Logback 1.6.5 (fixes CVE-2026-104721, which generated projects can't reach because they configure no MDC discriminator), SLF4J 2.0.20 / `slf4j-android` 2.0.20-0, and the Gradle wrapper 9.8.0.
-
 ### Deprecated
 
 ### Removed
+
+### Fixed
+
+### Security
+
+## 1.9.2 - 2026-10-06
+
+### Changed
+
+- **Ledger pin bumped to `v1.9.1`.** Generated projects move to Kotlin 2.4.20, which is officially tested with the AGP 9.1.1 they pin. Other dependency upgrades: Compose Multiplatform 1.12.1, with Material3 Adaptive 1.3.0-rc01 and `navigation3-ui` 1.1.2 aligned to it, KSP 2.3.12 (the KSP pin is gone), Kover 0.9.11, Logback 1.6.5 (fixes CVE-2026-104721, which generated projects can't reach because they configure no MDC discriminator), SLF4J 2.0.20 / `slf4j-android` 2.0.20-0, and the Gradle wrapper 9.8.0.
 
 ### Fixed
 
@@ -20,8 +28,6 @@
 - **Stray spaces in the package name no longer reach generated packages and directories.**
 - **A failed generation no longer leaves a half-written or emptied project directory.** Writing the project into its folder now either finishes or is rolled back. If it fails part-way, for example on a full disk or a file locked by antivirus, every file it wrote is removed and every file it replaced is put back. In Android Studio, the default project files are only replaced after rendering succeeds, and are restored if the write fails.
 - **The post-sync `apiDump` runs at most once**, even when two sync events arrive at the same moment.
-
-### Security
 
 ## 1.9.1 - 2026-09-19
 
