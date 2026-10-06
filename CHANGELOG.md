@@ -6,6 +6,8 @@
 
 ### Changed
 
+- **Ledger pin bumped to `v1.9.1`.** Generated projects move to Kotlin 2.4.20, which is officially tested with the AGP 9.1.1 they pin. Other dependency upgrades: Compose Multiplatform 1.12.1, with Material3 Adaptive 1.3.0-rc01 and `navigation3-ui` 1.1.2 aligned to it, KSP 2.3.12 (the KSP pin is gone), Kover 0.9.11, Logback 1.6.5 (fixes CVE-2026-104721, which generated projects can't reach because they configure no MDC discriminator), SLF4J 2.0.20 / `slf4j-android` 2.0.20-0, and the Gradle wrapper 9.8.0.
+
 ### Deprecated
 
 ### Removed
