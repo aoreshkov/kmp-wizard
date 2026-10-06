@@ -572,6 +572,12 @@ abstract class GenerateTemplatesTask : DefaultTask() {
         outputDir.resolve("SUBSTITUTIONS.txt")
             .writeText(subs.joinToString("\n") { (literal, placeholder) -> "$literal\t$placeholder" })
 
+        // Likewise the dotfile rename table, so a test can assert TemplateRenderer's
+        // RESTORED_FILE_NAMES reverses every entry (a missing reverse entry would ship
+        // e.g. gitmodules.txt in place of .gitmodules). Not listed in MANIFEST.txt.
+        outputDir.resolve("RENAMES.txt")
+            .writeText(renames.entries.sortedBy { it.key }.joinToString("\n") { (name, stored) -> "$name\t$stored" })
+
         logger.lifecycle(
             "generateTemplates done — " +
                     "text: ${stats.text} (${stats.modified} modified)  " +

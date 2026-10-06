@@ -44,6 +44,7 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.plugins.gradle.service.project.open.linkAndSyncGradleProject
 import org.jetbrains.plugins.gradle.util.GradleConstants
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.Icon
 
 @Service(Service.Level.PROJECT)
@@ -75,43 +76,56 @@ internal fun notify(project: Project?, title: String, content: String, type: Not
  * [resolveProject] exists because the two wizard paths obtain the [Project] differently:
  * the IntelliJ IDEA generator already holds one, while the Android Studio recipe is handed
  * none and has to read it back off the sync task.
+ *
+ * Internal, with [runDump] and [unsubscribe] injectable, so the event filter and the
+ * one-shot contract are unit-testable without a Gradle sync. Production callers use the
+ * defaults.
  */
-private class ApiDumpAfterSyncListener(
+internal class ApiDumpAfterSyncListener(
     private val rootPath: String,
     private val resolveProject: (ExternalSystemTaskId) -> Project?,
+    private val runDump: (Project, String) -> Unit = ::runApiDump,
+    private val unsubscribe: (ExternalSystemTaskNotificationListener) -> Unit = {
+        ExternalSystemProgressNotificationManager.getInstance().removeNotificationListener(it)
+    },
 ) : ExternalSystemTaskNotificationListener {
+
+    // The notification manager may already be dispatching a second event to this
+    // listener when the first one unsubscribes it; this makes the reaction one-shot
+    // regardless of delivery order or thread.
+    private val handled = AtomicBoolean(false)
 
     private fun isFirstSyncOfProject(projectPath: String, id: ExternalSystemTaskId): Boolean =
         id.type == ExternalSystemTaskType.RESOLVE_PROJECT &&
             id.projectSystemId == GradleConstants.SYSTEM_ID &&
             FileUtil.pathsEqual(projectPath, rootPath)
 
-    private fun unsubscribe() {
-        ExternalSystemProgressNotificationManager.getInstance().removeNotificationListener(this)
+    /** True exactly once: for the first matching event, after unsubscribing. */
+    private fun claim(projectPath: String, id: ExternalSystemTaskId): Boolean {
+        if (!isFirstSyncOfProject(projectPath, id) || !handled.compareAndSet(false, true)) return false
+        unsubscribe(this)
+        return true
     }
 
     override fun onSuccess(projectPath: String, id: ExternalSystemTaskId) {
-        if (!isFirstSyncOfProject(projectPath, id)) return
-        unsubscribe()
+        if (!claim(projectPath, id)) return
         val project = resolveProject(id)
         if (project == null) {
             LOG.warn("KMP Wizard: Could not resolve the project for the finished sync — skipping apiDump.")
             return
         }
-        runApiDump(project, rootPath)
+        runDump(project, rootPath)
     }
 
     override fun onFailure(projectPath: String, id: ExternalSystemTaskId, exception: Exception) {
-        if (!isFirstSyncOfProject(projectPath, id)) return
-        unsubscribe()
+        if (!claim(projectPath, id)) return
         // The sync surfaces its own errors; apiDump against a broken build
         // would only add noise on top of them.
         LOG.warn("KMP Wizard: Initial Gradle sync failed — skipping apiDump.")
     }
 
     override fun onCancel(projectPath: String, id: ExternalSystemTaskId) {
-        if (!isFirstSyncOfProject(projectPath, id)) return
-        unsubscribe()
+        if (!claim(projectPath, id)) return
         LOG.info("KMP Wizard: Initial Gradle sync cancelled — skipping apiDump.")
     }
 }
@@ -131,7 +145,7 @@ private class ApiDumpAfterSyncListener(
  */
 internal fun scheduleApiDumpAfterSync(project: Project, rootPath: String) {
     ExternalSystemProgressNotificationManager.getInstance()
-        .addNotificationListener(ApiDumpAfterSyncListener(rootPath) { project }, project)
+        .addNotificationListener(ApiDumpAfterSyncListener(rootPath, resolveProject = { project }), project)
 }
 
 /**
@@ -200,7 +214,7 @@ class KMPProjectWizard : GeneratorNewProjectWizard {
         private val base = requireNotNull(baseData) {
             "KMPWizardStep must be preceded by a NewProjectWizardBaseStep — the step chain in createStep() is misconfigured."
         }
-        private val packageNameProperty = propertyGraph.property("com.example.${WizardInputValidation.sanitize(base.name)}")
+        private val packageNameProperty = propertyGraph.property(WizardInputValidation.defaultPackageName(base.name))
         private val featureNameProperty = propertyGraph.property("note")
         private val fieldNameProperty = propertyGraph.property("content")
         private val testValueNameProperty = propertyGraph.property("Buy groceries")
@@ -227,8 +241,8 @@ class KMPProjectWizard : GeneratorNewProjectWizard {
 
         init {
             base.nameProperty.afterChange {
-                if (packageName.startsWith("com.example.")) {
-                    packageName = "com.example.${WizardInputValidation.sanitize(it)}"
+                if (packageName.startsWith(WizardInputValidation.DEFAULT_PACKAGE_PREFIX)) {
+                    packageName = WizardInputValidation.defaultPackageName(it)
                 }
             }
         }
@@ -243,9 +257,11 @@ class KMPProjectWizard : GeneratorNewProjectWizard {
                             val pkg = it.text.trim()
                             when {
                                 pkg.isBlank() -> error(KMPWizardBundle.message("settings.package.error.empty"))
-                                !WizardInputValidation.isValidPackageName(pkg) ->
+                                !WizardInputValidation.isWellFormedPackageName(pkg) ->
                                     error(KMPWizardBundle.message("settings.package.error.invalid"))
-                                else -> null
+                                else -> WizardInputValidation.reservedPackageSegments(pkg).firstOrNull()?.let { word ->
+                                    error(KMPWizardBundle.message("settings.package.error.reserved", word))
+                                }
                             }
                         }
                 }
@@ -258,8 +274,10 @@ class KMPProjectWizard : GeneratorNewProjectWizard {
                             val name = it.text.trim()
                             when {
                                 name.isBlank() -> error(KMPWizardBundle.message("settings.feature.error.empty"))
-                                !WizardInputValidation.isValidIdentifier(name) ->
+                                !WizardInputValidation.isWellFormedIdentifier(name) ->
                                     error(KMPWizardBundle.message("settings.identifier.error.charset"))
+                                WizardInputValidation.isReservedIdentifier(name) ->
+                                    error(KMPWizardBundle.message("settings.identifier.error.reserved", name))
                                 else -> null
                             }
                         }
@@ -273,8 +291,10 @@ class KMPProjectWizard : GeneratorNewProjectWizard {
                             val name = it.text.trim()
                             when {
                                 name.isBlank() -> error(KMPWizardBundle.message("settings.field.error.empty"))
-                                !WizardInputValidation.isValidIdentifier(name) ->
+                                !WizardInputValidation.isWellFormedIdentifier(name) ->
                                     error(KMPWizardBundle.message("settings.identifier.error.charset"))
+                                WizardInputValidation.isReservedIdentifier(name) ->
+                                    error(KMPWizardBundle.message("settings.identifier.error.reserved", name))
                                 else -> null
                             }
                         }
@@ -342,12 +362,14 @@ class KMPProjectWizard : GeneratorNewProjectWizard {
         override fun setupProject(project: Project) {
             super.setupProject(project)
 
+            // The validators check the trimmed text but bindText stores it raw — trim here
+            // so stray whitespace can never reach package declarations or file paths.
             val settings = KMPProjectSettings(
                 appName = base.name,
-                packageName = packageName,
-                featureName = featureName,
-                fieldName = fieldName,
-                testValueName = testValueName,
+                packageName = packageName.trim(),
+                featureName = featureName.trim(),
+                fieldName = fieldName.trim(),
+                testValueName = testValueName.trim(),
                 includeAndroid = includeAndroid,
                 includeDesktop = includeDesktop,
                 includeIos = includeIos,

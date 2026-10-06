@@ -27,10 +27,19 @@ object KMPLicense {
      * - `false` — definitively unlicensed;
      * - `null`  — [LicensingFacade] is not initialized yet, so it cannot be determined.
      */
-    fun isLicensed(): Boolean? {
-        val facade = LicensingFacade.getInstance() ?: return null
+    fun isLicensed(): Boolean? = licenseState(LicensingFacade.getInstance())
+
+    /**
+     * [isLicensed] with its inputs passed in, so the tri-state mapping is unit-testable
+     * without a running IDE ([LicensingFacade.setInstance] publishes on the app bus).
+     */
+    internal fun licenseState(
+        facade: LicensingFacade?,
+        verify: (String) -> Boolean = LicenseManager::isConfirmationStampValid,
+    ): Boolean? {
+        facade ?: return null
         val stamp = facade.getConfirmationStamp(PRODUCT_CODE) ?: return false
-        return LicenseManager.isConfirmationStampValid(stamp)
+        return verify(stamp)
     }
 
     /**

@@ -76,6 +76,45 @@ class TemplateRendererTest {
         assertEquals("Rent", s["{{TEST_VALUE_NAME}}"])
     }
 
+    @Test fun `test value is escaped for a Kotlin string literal`() {
+        fun rendered(value: String) =
+            TemplateRenderer.buildSubstitutions(defaultSettings.copy(testValueName = value))["{{TEST_VALUE_NAME}}"]
+
+        assertEquals("""Say \"hi\"""", rendered("""Say "hi""""))
+        assertEquals("""cost \$5""", rendered("cost \$5"))
+        assertEquals("""C:\\temp""", rendered("""C:\temp"""))
+        assertEquals("""a\nb\tc""", rendered("a\nb\tc"))
+        assertEquals("""bell\u0007""", rendered("bell\u0007"))
+        assertEquals("unicode stays as-is: café ☕", rendered("unicode stays as-is: café ☕"))
+    }
+
+    @Test fun `feature or field names without a leading Latin letter fail fast`() {
+        for (bad in listOf("!!!", "---", "_", "заметка", "1note", "2fa", "")) {
+            assertTrue("feature \"$bad\" must be rejected", runCatching {
+                TemplateRenderer.buildSubstitutions(defaultSettings.copy(featureName = bad))
+            }.exceptionOrNull() is IllegalArgumentException)
+            assertTrue("field \"$bad\" must be rejected", runCatching {
+                TemplateRenderer.buildSubstitutions(defaultSettings.copy(fieldName = bad))
+            }.exceptionOrNull() is IllegalArgumentException)
+        }
+    }
+
+    // ── restoreFileName ──────────────────────────────────────────────────────
+
+    @Test fun `a renamed dotfile at the root is restored`() =
+        assertEquals(".gitignore", TemplateRenderer.restoreFileName("gitignore.txt"))
+
+    @Test fun `a renamed dotfile in a nested directory is restored in place`() =
+        assertEquals("iosApp/sub/.gitattributes", TemplateRenderer.restoreFileName("iosApp/sub/gitattributes.txt"))
+
+    @Test fun `paths that are not renamed pass through unchanged`() {
+        assertEquals("notes/gitignore.txt.bak", TemplateRenderer.restoreFileName("notes/gitignore.txt.bak"))
+        assertEquals("my-gitignore.txt", TemplateRenderer.restoreFileName("my-gitignore.txt"))
+        assertEquals("settings.gradle.kts", TemplateRenderer.restoreFileName("settings.gradle.kts"))
+        // Only the file name is matched — a directory that happens to share it is not.
+        assertEquals("gitignore.txt/README.md", TemplateRenderer.restoreFileName("gitignore.txt/README.md"))
+    }
+
     // ── applySubstitutions ───────────────────────────────────────────────────
 
     @Test fun `placeholder in file content is replaced`() {

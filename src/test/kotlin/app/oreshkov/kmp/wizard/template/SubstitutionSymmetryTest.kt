@@ -15,12 +15,8 @@ import org.junit.Test
  */
 class SubstitutionSymmetryTest {
 
-    // Mirrors TemplateRenderer.BINARY_EXTENSIONS — binary files are copied verbatim and
-    // are not scanned for placeholders.
-    private val binaryExtensions = setOf(
-        "png", "webp", "jpg", "jpeg", "gif",
-        "jar", "zip", "keystore", "ico", "icns",
-    )
+    // Binary files are copied verbatim and are not scanned for placeholders.
+    private val binaryExtensions = TemplateRenderer.BINARY_EXTENSIONS
 
     private val placeholderRegex = Regex("""\{\{[A-Z_]+\}\}""")
 
