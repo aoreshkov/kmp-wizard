@@ -3,8 +3,10 @@ package app.oreshkov.kmp.wizard.template
 import app.oreshkov.kmp.wizard.KMPProjectSettings
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import java.io.File
@@ -66,6 +68,32 @@ class TemplateRenderIntegrationTest {
         // The pipeline's own metadata files must never be emitted into the generated project.
         assertFalse("MANIFEST.txt must not be rendered", tempDir.resolve("MANIFEST.txt").exists())
         assertFalse("SUBSTITUTIONS.txt must not be rendered", tempDir.resolve("SUBSTITUTIONS.txt").exists())
+        assertFalse("RENAMES.txt must not be rendered", tempDir.resolve("RENAMES.txt").exists())
+    }
+
+    @Test fun `every build-time dotfile rename is reversed by the renderer`() {
+        // generateTemplates ships its templateRenamedFiles table as RENAMES.txt; a name
+        // added there but not to RESTORED_FILE_NAMES would ship e.g. `gitmodules.txt`
+        // in generated projects in place of the real dotfile.
+        val renames = (javaClass.getResourceAsStream("/templates/RENAMES.txt")
+            ?: error("RENAMES.txt not found on the test classpath — rerun generateTemplates"))
+            .bufferedReader()
+            .readLines()
+            .filter { it.isNotBlank() }
+            .map { line -> line.split('\t').also { require(it.size == 2) { "Malformed RENAMES.txt line: $line" } } }
+            .associate { (name, stored) -> name to stored }
+        assertTrue("RENAMES.txt should list the dotfile renames", renames.isNotEmpty())
+
+        val drift = renames.filter { (name, stored) ->
+            TemplateRenderer.restoreFileName(stored) != name ||
+                TemplateRenderer.restoreFileName("nested/dir/$stored") != "nested/dir/$name"
+        }
+        assertTrue("Renames not reversed by TemplateRenderer.RESTORED_FILE_NAMES: $drift", drift.isEmpty())
+        assertEquals(
+            "RESTORED_FILE_NAMES must not restore names the build never renames",
+            renames.entries.associate { (name, stored) -> stored to name },
+            TemplateRenderer.RESTORED_FILE_NAMES,
+        )
     }
 
     @Test fun `no BCV ABI dumps are shipped in the templates`() {
@@ -117,13 +145,7 @@ class TemplateRenderIntegrationTest {
             tempDir.resolve("gitattributes.txt").exists(),
         )
 
-        // The Gradle wrapper script is present; its executable bit is restored where the
-        // filesystem tracks one (skip on Windows, which has no POSIX exec bit).
-        val gradlew = tempDir.resolve("gradlew")
-        assertTrue("gradlew should be rendered", gradlew.isFile)
-        if (!System.getProperty("os.name").startsWith("Windows")) {
-            assertTrue("gradlew should be executable", gradlew.canExecute())
-        }
+        assertTrue("gradlew should be rendered", tempDir.resolve("gradlew").isFile)
 
         // A binary template must be copied byte-for-byte (no UTF-8 round-trip). Picked
         // dynamically from the manifest so a ledger-side asset rename can't break the
@@ -144,6 +166,13 @@ class TemplateRenderIntegrationTest {
         assertArrayEquals("binary must be byte-identical to its template", templateBytes, renderedBinary.readBytes())
     }
 
+    @Test fun `the rendered gradlew is executable`() {
+        // Reported as skipped (not silently passed) where there is no POSIX exec bit.
+        assumeFalse("Windows has no POSIX executable bit", System.getProperty("os.name").startsWith("Windows"))
+        TemplateRenderer.render(defaultSettings, tempDir)
+        assertTrue("gradlew should be executable", tempDir.resolve("gradlew").canExecute())
+    }
+
     private fun loadManifest(): List<String> =
         (javaClass.getResourceAsStream("/templates/MANIFEST.txt")
             ?: error("Template MANIFEST.txt not found on the test classpath"))
@@ -151,9 +180,8 @@ class TemplateRenderIntegrationTest {
             .readLines()
             .filter { it.isNotBlank() && it != "MANIFEST.txt" }
 
-    /** Mirrors [TemplateRenderer]'s binary rule: an allow-listed extension or a NUL byte. */
-    private fun isBinary(name: String, bytes: ByteArray): Boolean =
-        name.substringAfterLast('.', "").lowercase() in binaryExtensions || bytes.contains(0)
+    /** [TemplateRenderer]'s own binary rule: an allow-listed extension or a NUL byte. */
+    private fun isBinary(name: String, bytes: ByteArray): Boolean = TemplateRenderer.isBinaryContent(name, bytes)
 
     private companion object {
         val defaultSettings = KMPProjectSettings(
@@ -163,7 +191,7 @@ class TemplateRenderIntegrationTest {
             fieldName = "narrative",
             testValueName = "Groceries",
         )
-        val binaryExtensions = setOf("png", "webp", "jpg", "jpeg", "gif", "jar", "zip", "keystore")
+        val binaryExtensions = TemplateRenderer.BINARY_EXTENSIONS
 
         // A leftover template placeholder is specifically `{{UPPER_SNAKE}}`; this avoids
         // false positives on GitHub Actions `${{ ... }}` expressions in workflow YAML.

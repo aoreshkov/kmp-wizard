@@ -39,8 +39,12 @@ internal fun thumbnailUrl(): URL? = KMPProjectSettings::class.java.getResource(T
 /**
  * Paths Android Studio's New Project wizard writes into the project root before the
  * template recipe runs. The KMP templates bring their own copy of every one of these,
- * so Studio's versions have to go first or the generated project ends up with a stray
- * `app` module and a `settings.gradle.kts` that does not know about the real modules.
+ * so Studio's versions have to go or the generated project ends up with a stray `app`
+ * module and a `settings.gradle.kts` that does not know about the real modules.
+ *
+ * They are handed to [app.oreshkov.kmp.wizard.generateStagedThenCommit] as replaced
+ * paths, so they are only moved aside once rendering has succeeded and are put back
+ * if the commit fails — a failure never leaves a root with no build files at all.
  *
  * The list mirrors `DEFAULT_WIZARD_PATHS` in JetBrains' own Kotlin Multiplatform plugin
  * (`com.intellij.kmm.wizard.android.KotlinMultiplatformWizardProjectRecipeKt`), which
@@ -85,18 +89,27 @@ internal fun isDryRunPass(rootDir: File): Boolean {
     return true
 }
 
-/**
- * Deletes [ANDROID_STUDIO_DEFAULT_PATHS] from [rootDir], returning `false` if anything
- * survived. Absent entries count as success — which of them Studio actually wrote
- * depends on the options picked on its first page.
- */
-internal fun deleteAndroidStudioDefaults(rootDir: File): Boolean =
-    ANDROID_STUDIO_DEFAULT_PATHS
-        .map { rootDir.resolve(it) }
-        .all { !it.exists() || it.deleteRecursively() }
+/** The outcome of mapping Android Studio's form values onto generation settings. */
+internal sealed interface StudioInput {
+    data class Valid(val settings: KMPProjectSettings) : StudioInput
+
+    /**
+     * A name that cannot become a Kotlin identifier. [parameter] says which widget it
+     * came from so the recipe can name it in the user-facing message.
+     */
+    data class InvalidName(val parameter: NameParameter, val value: String) : StudioInput
+}
+
+internal enum class NameParameter { FEATURE, FIELD }
 
 /**
  * Builds the generation settings from the values Android Studio collected.
+ *
+ * Studio's template DSL can only check a string parameter against its fixed
+ * `Constraint` enum, so feature and field names arrive unvalidated. They are normalized
+ * to the snake_case form the IDEA form enforces (`Note` and `My Feature` are fine) and
+ * rejected as [StudioInput.InvalidName] when nothing valid can be derived — `2fa`,
+ * `заметка` or `object` would otherwise render an unbuildable project.
  *
  * [appName] and [packageName] come from Studio's own first page rather than from a
  * widget of ours — Studio owns project name, package and save location on this path.
@@ -123,20 +136,27 @@ internal fun studioSettings(
     includeAgentConfig: Boolean,
     includeCi: Boolean,
     pro: Boolean,
-): KMPProjectSettings {
+): StudioInput {
+    val feature = WizardInputValidation.normalizeIdentifier(featureName)
+        ?: return StudioInput.InvalidName(NameParameter.FEATURE, featureName)
+    val field = WizardInputValidation.normalizeIdentifier(fieldName)
+        ?: return StudioInput.InvalidName(NameParameter.FIELD, fieldName)
+
     val anyPlatform =
         WizardInputValidation.isAtLeastOnePlatformSelected(includeAndroid, includeDesktop, includeIos)
 
-    return KMPProjectSettings(
-        appName = appName,
-        packageName = packageName,
-        featureName = featureName,
-        fieldName = fieldName,
-        testValueName = testValueName,
-        includeAndroid = includeAndroid || !anyPlatform,
-        includeDesktop = includeDesktop,
-        includeIos = includeIos,
-        includeAgentConfig = includeAgentConfig && pro,
-        includeCi = includeCi && pro,
+    return StudioInput.Valid(
+        KMPProjectSettings(
+            appName = appName,
+            packageName = packageName.trim(),
+            featureName = feature,
+            fieldName = field,
+            testValueName = testValueName.trim(),
+            includeAndroid = includeAndroid || !anyPlatform,
+            includeDesktop = includeDesktop,
+            includeIos = includeIos,
+            includeAgentConfig = includeAgentConfig && pro,
+            includeCi = includeCi && pro,
+        ),
     )
 }

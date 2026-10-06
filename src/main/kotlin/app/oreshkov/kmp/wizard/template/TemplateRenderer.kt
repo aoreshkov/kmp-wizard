@@ -5,7 +5,8 @@ import java.io.File
 
 object TemplateRenderer {
 
-    private val BINARY_EXTENSIONS = setOf(
+    /** Internal so tests mirror the renderer's binary rule instead of keeping a copy. */
+    internal val BINARY_EXTENSIONS = setOf(
         "png", "webp", "jpg", "jpeg", "gif",
         "jar", "zip", "keystore", "ico", "icns",
     )
@@ -14,9 +15,10 @@ object TemplateRenderer {
      * Template file name → the real name it is written out under. Dotfiles that Ant's
      * default excludes would drop from the plugin jar are stored under a neutral name
      * by the `generateTemplates` build task; this is the reverse of its
-     * `templateRenamedFiles` table, and the two must stay in sync.
+     * `templateRenamedFiles` table, and the two must stay in sync. The build ships its
+     * table as `RENAMES.txt` so a test fails if they drift.
      */
-    private val RESTORED_FILE_NAMES = mapOf(
+    internal val RESTORED_FILE_NAMES = mapOf(
         "gitignore.txt" to ".gitignore",
         "gitattributes.txt" to ".gitattributes",
     )
@@ -53,6 +55,12 @@ object TemplateRenderer {
         val fieldPascal = settings.fieldName.toPascalCase()
         val fieldUpper  = settings.fieldName.toUpperSnakeCase()
 
+        // Backstop for callers that bypass the wizard's validation: input such as "!!!",
+        // "2fa" or a non-ASCII name converts to an empty or digit-leading identifier,
+        // which would render a project that cannot compile. Fail before writing anything.
+        requireGeneratableIdentifier("Feature name", settings.featureName, featurePascal)
+        requireGeneratableIdentifier("Field name", settings.fieldName, fieldCamel)
+
         return mapOf(
             "{{PACKAGE_NAME}}"       to settings.packageName,
             "{{PACKAGE_PATH}}"       to settings.packageName.replace('.', '/'),
@@ -65,15 +73,46 @@ object TemplateRenderer {
             "{{FIELD_NAME}}"         to fieldCamel,
             "{{FIELD_NAME_PASCAL}}"  to fieldPascal,
             "{{FIELD_NAME_UPPER}}"   to fieldUpper,
-            "{{TEST_VALUE_NAME}}"    to settings.testValueName,
+            // Every template use of the test value sits inside a Kotlin string literal.
+            "{{TEST_VALUE_NAME}}"    to settings.testValueName.escapeForKotlinString(),
         )
     }
 
+    private fun requireGeneratableIdentifier(label: String, raw: String, converted: String) {
+        require(converted.firstOrNull()?.isLetter() == true) {
+            "$label \"$raw\" does not produce a valid identifier — start it with a Latin letter."
+        }
+    }
+
+    /**
+     * Escapes this string for use between the quotes of a Kotlin string literal: `\`,
+     * `"` and `$` (string templates) are backslash-escaped, and control characters use
+     * Kotlin's escape sequences, so `Say "hi"` or `cost $5` reach the generated code
+     * verbatim instead of breaking or altering it.
+     */
+    internal fun String.escapeForKotlinString(): String = buildString(length) {
+        for (c in this@escapeForKotlinString) {
+            when (c) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '$' -> append("\\$")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                '\b' -> append("\\b")
+                else -> if (c.isISOControl()) append("\\u%04x".format(c.code)) else append(c)
+            }
+        }
+    }
+
     // These helpers intentionally accept ANY input form — snake_case, kebab-case,
-    // camelCase, acronyms, or "spaced words" — even though the wizard UI currently
-    // restricts feature/field names to `^[a-z][a-z0-9_]*$`. Keeping the engine
-    // independent of the UI's validation makes it reusable and is why CaseConverterTest
-    // exercises the broader set of inputs (those cases are deliberate, not dead code).
+    // camelCase, acronyms, or "spaced words" — even though the IDEA wizard restricts
+    // feature/field names to `^[a-z][a-z0-9_]*$` (the Android Studio path normalizes
+    // through them instead, see WizardInputValidation.normalizeIdentifier). Keeping the
+    // engine independent of the UI's validation makes it reusable and is why
+    // CaseConverterTest exercises the broader set of inputs (deliberate, not dead code).
+    // What they cannot do is invent a letter: input with no ASCII alphanumerics converts
+    // to "", which buildSubstitutions rejects.
     internal fun String.toIdentifierSegments(): List<String> =
         this.split(IDENTIFIER_SEGMENT_REGEX)
             .filter { it.isNotBlank() }

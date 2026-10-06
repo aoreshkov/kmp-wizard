@@ -87,9 +87,10 @@ class KMPWizardTemplateProvider : WizardTemplateProvider() {
         thumb = { thumbnailUrl()?.let { url -> Thumb { url } } ?: Thumb.NoThumb }
 
         // Studio's template DSL offers no custom validator — only the built-in Constraint
-        // enum — so these are checked for emptiness only. That is safe because
-        // TemplateRenderer's case converters accept any input form (snake_case, camelCase,
-        // spaced words, acronyms) by design and normalise it themselves.
+        // enum — so the form checks these for emptiness only. The recipe normalizes them
+        // (studioSettings accepts `Note` or `My Feature`) and refuses, with a notification,
+        // any name that cannot become a valid, non-keyword Kotlin identifier. The test
+        // value needs no such check: the renderer escapes it into a string literal.
         val featureName = stringParameter {
             name = KMPWizardBundle.message("studio.param.feature")
             help = KMPWizardBundle.message("settings.feature.comment")
@@ -162,22 +163,23 @@ class KMPWizardTemplateProvider : WizardTemplateProvider() {
 
             // Studio runs every recipe twice; only the second pass may touch the disk.
             if (!isDryRunPass(rootDir)) {
-                generateKmpProject(
-                    rootDir = rootDir,
-                    settings = studioSettings(
-                        appName = moduleData.themesData.appName,
-                        packageName = moduleData.packageName,
-                        featureName = featureName.value,
-                        fieldName = fieldName.value,
-                        testValueName = testValueName.value,
-                        includeAndroid = includeAndroid.value,
-                        includeDesktop = includeDesktop.value,
-                        includeIos = includeIos.value,
-                        includeAgentConfig = includeAgentConfig.value,
-                        includeCi = includeCi.value,
-                        pro = KMPLicense.isPro(),
-                    ),
+                val input = studioSettings(
+                    appName = moduleData.themesData.appName,
+                    packageName = moduleData.packageName,
+                    featureName = featureName.value,
+                    fieldName = fieldName.value,
+                    testValueName = testValueName.value,
+                    includeAndroid = includeAndroid.value,
+                    includeDesktop = includeDesktop.value,
+                    includeIos = includeIos.value,
+                    includeAgentConfig = includeAgentConfig.value,
+                    includeCi = includeCi.value,
+                    pro = KMPLicense.isPro(),
                 )
+                when (input) {
+                    is StudioInput.Valid -> generateKmpProject(rootDir, input.settings)
+                    is StudioInput.InvalidName -> notifyInvalidStudioName(input)
+                }
             }
         }
     }

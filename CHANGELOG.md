@@ -14,6 +14,13 @@
 
 ### Fixed
 
+- **Kotlin and Java keywords are rejected as package segments and as feature or field names.** Names like `com.example.object` or a field called `val` used to pass validation and produce a project that doesn't compile. The wizard now flags them as you type. The package it proposes from the project name is always valid too, so a project named "Object", "Class" or "2FA" no longer gets a broken default.
+- **Android Studio: invalid feature and field names no longer produce an unbuildable project.** Names are normalized (`My Feature` becomes `my_feature`). A name that can't become a valid identifier, such as `2fa`, a non-Latin name or a keyword, stops generation with a notification that names the field, instead of reporting success.
+- **Quotes, backslashes and `$` in the test value are escaped.** A value like `Say "hi"` used to break the generated tests, and `cost $5` changed their meaning.
+- **Stray spaces in the package name no longer reach generated packages and directories.**
+- **A failed generation no longer leaves a half-written or emptied project directory.** Writing the project into its folder now either finishes or is rolled back. If it fails part-way, for example on a full disk or a file locked by antivirus, every file it wrote is removed and every file it replaced is put back. In Android Studio, the default project files are only replaced after rendering succeeds, and are restored if the write fails.
+- **The post-sync `apiDump` runs at most once**, even when two sync events arrive at the same moment.
+
 ### Security
 
 ## 1.9.1 - 2026-09-19

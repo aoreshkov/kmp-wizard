@@ -11,10 +11,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.coroutines.coroutineContext
 import kotlin.io.path.createTempDirectory
 
@@ -39,6 +42,8 @@ class StagedGenerationTest {
         tempDir.deleteRecursively()
     }
 
+    private val isWindows = System.getProperty("os.name").startsWith("Windows")
+
     @Test fun `success commits the full staged tree to the root and deletes staging`() = runBlocking {
         var staging: File? = null
 
@@ -53,11 +58,91 @@ class StagedGenerationTest {
         assertEquals("rootProject.name = \"app\"\n", rootDir.resolve("settings.gradle.kts").readText())
         assertEquals("class Screen\n", rootDir.resolve("feature/impl/Screen.kt").readText())
         assertTrue("gradlew should be committed", rootDir.resolve("gradlew").isFile)
-        if (!System.getProperty("os.name").startsWith("Windows")) {
-            assertTrue("gradlew executable bit should be restored", rootDir.resolve("gradlew").canExecute())
-        }
         assertNotNull(staging)
         assertFalse("staging must be deleted after success", staging!!.exists())
+    }
+
+    @Test fun `the committed gradlew is executable`() = runBlocking {
+        // Reported as skipped (not silently passed) where there is no POSIX exec bit.
+        assumeFalse("Windows has no POSIX executable bit", isWindows)
+        generateStagedThenCommit(rootDir) { s -> s.resolve("gradlew").writeText("#!/bin/sh\n") }
+        assertTrue("gradlew executable bit should be restored", rootDir.resolve("gradlew").canExecute())
+    }
+
+    // ── Commit atomicity ──────────────────────────────────────────────────────
+
+    @Test fun `a commit that fails part-way removes everything it wrote, root included`() = runBlocking {
+        var copies = 0
+        val failing: (Path, Path) -> Unit = { source, target ->
+            if (++copies == 3) throw IOException("disk full")
+            Files.copy(source, target)
+        }
+
+        try {
+            generateStagedThenCommit(rootDir, copyFile = failing) { s -> writeProject(s) }
+            fail("expected the IOException to propagate")
+        } catch (e: IOException) {
+            assertEquals("disk full", e.message)
+        }
+
+        assertEquals("two files were copied before the failure", 3, copies)
+        assertFalse("a root the commit created must be removed again", rootDir.exists())
+    }
+
+    @Test fun `a commit that fails part-way restores the root's existing files`() = runBlocking {
+        // Mirrors the IDE having already written files into the project root.
+        rootDir.resolve(".idea").mkdirs()
+        rootDir.resolve(".idea/workspace.xml").writeText("<ide/>")
+        rootDir.resolve("settings.gradle.kts").writeText("// pre-existing")
+        var copies = 0
+
+        val result = runCatching {
+            generateStagedThenCommit(rootDir, copyFile = { source, target ->
+                if (++copies == 3) throw IOException("disk full")
+                Files.copy(source, target)
+            }) { s -> writeProject(s) }
+        }
+
+        assertTrue(result.exceptionOrNull() is IOException)
+        assertEquals("<ide/>", rootDir.resolve(".idea/workspace.xml").readText())
+        assertEquals("an overwritten file must be put back", "// pre-existing", rootDir.resolve("settings.gradle.kts").readText())
+        assertEquals("nothing else may remain in the root",
+            setOf(".idea", "settings.gradle.kts"), rootDir.list()!!.toSet())
+    }
+
+    @Test fun `a successful commit over existing files overwrites them and leaves no backup`() = runBlocking {
+        rootDir.mkdirs()
+        rootDir.resolve("settings.gradle.kts").writeText("// pre-existing")
+        rootDir.resolve("keep.txt").writeText("mine")
+
+        generateStagedThenCommit(rootDir) { s -> writeProject(s) }
+
+        assertEquals("rootProject.name = \"app\"\n", rootDir.resolve("settings.gradle.kts").readText())
+        assertEquals("mine", rootDir.resolve("keep.txt").readText())
+        assertEquals(emptyList<String>(), rootDir.list()!!.filter { it.startsWith(COMMIT_BACKUP_DIR_PREFIX) })
+    }
+
+    @Test fun `replaced paths are removed on success and restored on failure`() = runBlocking {
+        rootDir.resolve("app").mkdirs()
+        rootDir.resolve("app/build.gradle.kts").writeText("plugins { }")
+
+        runCatching {
+            generateStagedThenCommit(rootDir, replacedPaths = listOf("app", "absent")) { throw IOException("render failed") }
+        }
+        assertEquals("a render failure must not touch replaced paths",
+            "plugins { }", rootDir.resolve("app/build.gradle.kts").readText())
+
+        generateStagedThenCommit(rootDir, replacedPaths = listOf("app", "absent")) { s -> writeProject(s) }
+        assertFalse("a replaced path must be gone after a successful commit", rootDir.resolve("app").exists())
+        assertTrue(rootDir.resolve("feature/impl/Screen.kt").isFile)
+    }
+
+    private fun writeProject(staging: File) {
+        staging.resolve("settings.gradle.kts").writeText("rootProject.name = \"app\"\n")
+        staging.resolve("feature/impl").mkdirs()
+        staging.resolve("feature/impl/Screen.kt").writeText("class Screen\n")
+        staging.resolve("feature/impl/Model.kt").writeText("class Model\n")
+        staging.resolve("gradlew").writeText("#!/bin/sh\n")
     }
 
     @Test fun `a generation failure leaves the root untouched, deletes staging, and propagates`() = runBlocking {

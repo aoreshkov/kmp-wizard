@@ -132,6 +132,124 @@ class LicenseManagerTest {
         assertFalse(LicenseManager.isConfirmationStampValid(stamp, testRoots))
     }
 
+    // ── Signature verification is the gate (tampered payloads) ────────────────
+    //
+    // Every other rejection test fails for a reason unrelated to the signature. These
+    // carry an authentic certificate and a well-formed structure but bytes that differ
+    // from what was signed, so only `sig.verify(...)` returning false can reject them.
+
+    @Test fun `a key whose payload was altered after signing is rejected`() {
+        val licenseId = "12345"
+        val key = signedKey(
+            keyLicenseId = licenseId,
+            payloadLicenseId = licenseId,
+            // Still carries the right licenseId, so the later payload check would pass.
+            carriedPayload = """{"licenseId":"$licenseId","licenseeName":"Mallory"}""",
+        )
+        assertFalse(LicenseManager.isConfirmationStampValid(key, testRoots))
+    }
+
+    @Test fun `a server stamp whose timestamp was altered after signing is rejected`() {
+        val now = System.currentTimeMillis()
+        val stamp = signedServerStamp(
+            expectedMachineId = "machine-1",
+            machineId = "machine-1",
+            timeStamp = now + 1, // fresh and for this machine — only the signature is wrong
+            signedMessage = "$now:machine-1",
+        )
+        assertFalse(LicenseManager.isConfirmationStampValid(stamp, testRoots))
+    }
+
+    @Test fun `a server stamp whose machineId was altered after signing is rejected`() {
+        val now = System.currentTimeMillis()
+        // expected == carried, so the machine check alone would accept it.
+        val stamp = signedServerStamp(
+            expectedMachineId = "machine-2",
+            machineId = "machine-2",
+            timeStamp = now,
+            signedMessage = "$now:machine-1",
+        )
+        assertFalse(LicenseManager.isConfirmationStampValid(stamp, testRoots))
+    }
+
+    @Test fun `a server stamp declaring a different allowed algorithm than it was signed with is rejected`() {
+        val stamp = signedServerStamp(
+            expectedMachineId = "machine-1",
+            machineId = "machine-1",
+            timeStamp = System.currentTimeMillis(),
+            sigType = "SHA512withRSA", // allow-listed, but the bytes are SHA256withRSA
+        )
+        assertFalse(LicenseManager.isConfirmationStampValid(stamp, testRoots))
+    }
+
+    // ── Freshness window boundaries ───────────────────────────────────────────
+
+    @Test fun `a server stamp just inside the one-hour window is accepted, both directions`() {
+        val now = System.currentTimeMillis()
+        for (offset in listOf(-59L * MINUTE_MS, 59L * MINUTE_MS)) {
+            val stamp = signedServerStamp("machine-1", "machine-1", timeStamp = now + offset)
+            assertTrue("offset ${offset / MINUTE_MS} min must be accepted", LicenseManager.isConfirmationStampValid(stamp, testRoots))
+        }
+    }
+
+    @Test fun `a server stamp just outside the one-hour window is rejected, both directions`() {
+        val now = System.currentTimeMillis()
+        for (offset in listOf(-61L * MINUTE_MS, 61L * MINUTE_MS)) {
+            val stamp = signedServerStamp("machine-1", "machine-1", timeStamp = now + offset)
+            assertFalse("offset ${offset / MINUTE_MS} min must be rejected", LicenseManager.isConfirmationStampValid(stamp, testRoots))
+        }
+    }
+
+    // ── More fail-closed stamp shapes ─────────────────────────────────────────
+
+    @Test fun `a server stamp with fewer than six parts is rejected`() {
+        val full = signedServerStamp("machine-1", "machine-1", System.currentTimeMillis())
+        val withoutCert = full.substringBeforeLast(':')
+        assertFalse(LicenseManager.isConfirmationStampValid(withoutCert, testRoots))
+    }
+
+    @Test fun `a well-formed server stamp verified against the bundled JetBrains roots is rejected`() {
+        val stamp = signedServerStamp("machine-1", "machine-1", System.currentTimeMillis())
+        assertFalse(LicenseManager.isConfirmationStampValid(stamp))
+    }
+
+    // ── Expired certificates: accepted for keys, rejected for stamps ──────────
+    //
+    // test-license-expired.p12 holds a leaf whose certificate expired in 2024, issued
+    // by a root valid until 2043. Keys validate the chain at the leaf's notBefore
+    // (perpetual fallback licenses outlive their certificate); license-server stamps
+    // validate at the current date. Flipping either flag fails one of these tests.
+    //
+    // Regenerate (password "changeit"): `keytool -genkeypair` the root with
+    // `-ext bc:c -startdate -3y -validity 7300` and a plain leaf, `-certreq` the leaf,
+    // `-gencert` it from the root with `-startdate -2y -validity 30`, then import the
+    // reply into the leaf alias.
+
+    @Test fun `a key signed with an expired certificate is still accepted`() {
+        val licenseId = "12345"
+        val payload = """{"licenseId":"$licenseId","licenseeName":"Test"}""".toByteArray(StandardCharsets.UTF_8)
+        val signature = sign("SHA1withRSA", payload, expiredLeafKey)
+        val key = "key:$licenseId-${b64(payload)}-${b64(signature)}-${b64(expiredLeafCert.encoded)}"
+        assertTrue(LicenseManager.isConfirmationStampValid(key, expiredRootAsTrustAnchor))
+    }
+
+    @Test fun `a server stamp signed with an expired certificate is rejected`() {
+        val machineId = "machine-1"
+        val timeStamp = System.currentTimeMillis()
+        val signature = sign("SHA256withRSA", "$timeStamp:$machineId".toByteArray(StandardCharsets.UTF_8), expiredLeafKey)
+        val stamp = "stamp:$machineId:$timeStamp:$machineId:SHA256withRSA:${b64(signature)}:${b64(expiredLeafCert.encoded)}"
+        assertFalse(LicenseManager.isConfirmationStampValid(stamp, expiredRootAsTrustAnchor))
+    }
+
+    @Test fun `the expired fixture really is expired and chains to its still-valid root`() {
+        // Guards the two tests above against a regenerated fixture silently losing
+        // the property they depend on.
+        val now = java.util.Date()
+        assertTrue("leaf must be expired", expiredLeafCert.notAfter.before(now))
+        assertTrue("root must still be valid", expiredRootCert.notAfter.after(now))
+        assertEquals(expiredRootCert.subjectX500Principal, expiredLeafCert.issuerX500Principal)
+    }
+
     // ── PKIX path building through an intermediate CA ─────────────────────────
     //
     // The chain fixture (test-license-chain.p12, generated once with keytool) holds a
@@ -164,12 +282,17 @@ class LicenseManagerTest {
     private val certificate: X509Certificate by lazy { keyStore.getCertificate(ALIAS) as X509Certificate }
     private val testRoots: List<String> by lazy { listOf(certificate.toPem()) }
 
-    /** Builds a `key:` stamp `key:<licenseId>-<payload>-<signature>-<cert>` (parts split on '-'). */
-    private fun signedKey(keyLicenseId: String, payloadLicenseId: String): String {
+    /**
+     * Builds a `key:` stamp `key:<licenseId>-<payload>-<signature>-<cert>` (parts split on '-').
+     * [carriedPayload], when given, replaces the signed payload in the key — a tampering
+     * case that only signature verification can catch.
+     */
+    private fun signedKey(keyLicenseId: String, payloadLicenseId: String, carriedPayload: String? = null): String {
         val payload = """{"licenseId":"$payloadLicenseId","licenseeName":"Test"}"""
             .toByteArray(StandardCharsets.UTF_8)
         val signature = sign("SHA1withRSA", payload)
-        return "key:$keyLicenseId-${b64(payload)}-${b64(signature)}-${b64(certificate.encoded)}"
+        val carried = carriedPayload?.toByteArray(StandardCharsets.UTF_8) ?: payload
+        return "key:$keyLicenseId-${b64(carried)}-${b64(signature)}-${b64(certificate.encoded)}"
     }
 
     /**
@@ -178,14 +301,17 @@ class LicenseManagerTest {
      * (parts split on ':'). The signed message is `<timeStamp>:<machineId>`.
      * [sigType] is declared in the stamp; the actual signing always uses SHA256withRSA
      * so an allow-list rejection is exercised on otherwise well-formed input.
+     * [signedMessage] defaults to what the stamp carries; overriding it models a stamp
+     * altered after signing.
      */
     private fun signedServerStamp(
         expectedMachineId: String,
         machineId: String,
         timeStamp: Long,
         sigType: String = "SHA256withRSA",
+        signedMessage: String = "$timeStamp:$machineId",
     ): String {
-        val signature = sign("SHA256withRSA", "$timeStamp:$machineId".toByteArray(StandardCharsets.UTF_8))
+        val signature = sign("SHA256withRSA", signedMessage.toByteArray(StandardCharsets.UTF_8))
         return "stamp:$expectedMachineId:$timeStamp:$machineId:$sigType:${b64(signature)}:${b64(certificate.encoded)}"
     }
 
@@ -221,9 +347,23 @@ class LicenseManagerTest {
         }
     }
 
-    private fun sign(algorithm: String, data: ByteArray): ByteArray =
+    // ── Expired-leaf fixture (expired leaf -> valid root) ─────────────────────
+
+    private val expiredKeyStore: KeyStore by lazy {
+        KeyStore.getInstance("PKCS12").apply {
+            (LicenseManagerTest::class.java.getResourceAsStream(EXPIRED_KEYSTORE_RESOURCE)
+                ?: error("Missing test keystore resource: $EXPIRED_KEYSTORE_RESOURCE"))
+                .use { load(it, KEYSTORE_PASSWORD) }
+        }
+    }
+    private val expiredLeafKey: PrivateKey by lazy { expiredKeyStore.getKey(EXPIRED_LEAF_ALIAS, KEYSTORE_PASSWORD) as PrivateKey }
+    private val expiredLeafCert: X509Certificate by lazy { expiredKeyStore.getCertificate(EXPIRED_LEAF_ALIAS) as X509Certificate }
+    private val expiredRootCert: X509Certificate by lazy { expiredKeyStore.getCertificate(EXPIRED_ROOT_ALIAS) as X509Certificate }
+    private val expiredRootAsTrustAnchor: List<String> by lazy { listOf(expiredRootCert.toPem()) }
+
+    private fun sign(algorithm: String, data: ByteArray, key: PrivateKey = privateKey): ByteArray =
         Signature.getInstance(algorithm).run {
-            initSign(privateKey)
+            initSign(key)
             update(data)
             sign()
         }
@@ -240,6 +380,10 @@ class LicenseManagerTest {
         private const val ALIAS = "testlicense"
         private const val CHAIN_KEYSTORE_RESOURCE = "/licensing/test-license-chain.p12"
         private const val CHAIN_LEAF_ALIAS = "testchainleaf"
+        private const val EXPIRED_KEYSTORE_RESOURCE = "/licensing/test-license-expired.p12"
+        private const val EXPIRED_LEAF_ALIAS = "testexpiredleaf"
+        private const val EXPIRED_ROOT_ALIAS = "testexpiredroot"
+        private const val MINUTE_MS = 60L * 1000L
         private val KEYSTORE_PASSWORD = "changeit".toCharArray()
     }
 }

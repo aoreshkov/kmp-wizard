@@ -34,22 +34,13 @@ private val LOG = logger<KMPWizardTemplateProvider>()
 internal fun generateKmpProject(rootDir: File, settings: KMPProjectSettings) {
     LOG.info("KMP Wizard: Starting Android Studio generation at ${rootDir.absolutePath}")
 
-    if (!deleteAndroidStudioDefaults(rootDir)) {
-        LOG.warn("KMP Wizard: Could not remove Android Studio's default project files.")
-        notify(
-            null,
-            KMPWizardBundle.message("notify.failure.title"),
-            KMPWizardBundle.message("studio.notify.cleanup.failed"),
-            NotificationType.ERROR,
-        )
-        return
-    }
-
     try {
         // Staging isolation and commit-on-success, exactly as on the IDEA path: a failure
         // must not leave a half-rendered tree mixed in with Studio's own project files.
+        // Studio's default scaffold is superseded inside the same commit — moved aside
+        // only after rendering succeeded, and restored if the commit itself fails.
         runBlocking {
-            generateStagedThenCommit(rootDir) { staging ->
+            generateStagedThenCommit(rootDir, replacedPaths = ANDROID_STUDIO_DEFAULT_PATHS) { staging ->
                 ProjectStructureGenerator(settings).generate(staging)
             }
         }
@@ -85,4 +76,23 @@ internal fun generateKmpProject(rootDir: File, settings: KMPProjectSettings) {
             NotificationType.ERROR,
         )
     }
+}
+
+/**
+ * Tells the user why nothing was generated. Studio's form cannot reject the name up
+ * front (see [studioSettings]), so this is the earliest point the problem can surface;
+ * Studio's own default project is left untouched.
+ */
+internal fun notifyInvalidStudioName(input: StudioInput.InvalidName) {
+    LOG.warn("KMP Wizard: Rejected ${input.parameter} name \"${input.value}\" — nothing generated.")
+    val label = when (input.parameter) {
+        NameParameter.FEATURE -> KMPWizardBundle.message("studio.param.feature")
+        NameParameter.FIELD -> KMPWizardBundle.message("studio.param.field")
+    }
+    notify(
+        null,
+        KMPWizardBundle.message("notify.failure.title"),
+        KMPWizardBundle.message("studio.notify.invalidName", label, input.value),
+        NotificationType.ERROR,
+    )
 }
