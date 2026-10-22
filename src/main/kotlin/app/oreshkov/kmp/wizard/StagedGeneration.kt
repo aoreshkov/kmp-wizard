@@ -1,5 +1,6 @@
 package app.oreshkov.kmp.wizard
 
+import com.intellij.openapi.diagnostic.logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
@@ -10,6 +11,10 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import kotlin.io.path.ExperimentalPathApi
+import kotlin.io.path.deleteRecursively
+
+private val LOG = logger<RootCommit>()
 
 /** Name prefix of the backup directory a commit creates inside the project root. */
 internal const val COMMIT_BACKUP_DIR_PREFIX = ".kmp-wizard-backup-"
@@ -34,24 +39,36 @@ internal const val COMMIT_BACKUP_DIR_PREFIX = ".kmp-wizard-backup-"
  * Studio's default scaffold). They are moved aside as part of the commit rather than
  * deleted up front, so a failed commit restores them along with everything else.
  *
+ * [onCommitted] runs synchronously the moment the commit has succeeded. It exists
+ * because a successful *return* is not proof of a commit's absence: `withContext`
+ * re-checks cancellation when it hands its result back, so a Cancel that lands during
+ * the commit surfaces as a [kotlinx.coroutines.CancellationException] with the project
+ * already on disk. Callers that must tell the user about such a project use the hook.
+ *
+ * Returns the commit's backup directory if it could not be removed after a successful
+ * commit (it then sits inside [rootDir] and the user should delete it), else `null`.
+ * The commit itself is not failed over that: the project is complete.
+ *
  * All filesystem work runs on [Dispatchers.IO]. Top-level + internal so the
  * commit/cancel/cleanup contract is unit-testable without the wizard UI; [copyFile]
- * exists only so tests can inject an I/O failure mid-commit.
+ * and [deleteTree] exist only so tests can inject I/O failures.
  */
 internal suspend fun generateStagedThenCommit(
     rootDir: File,
     replacedPaths: List<String> = emptyList(),
     copyFile: (source: Path, target: Path) -> Unit = ::copyPreservingAttributes,
+    deleteTree: (Path) -> Unit = ::deleteTreeOrThrow,
+    onCommitted: () -> Unit = {},
     generate: suspend (staging: File) -> Unit,
-) {
+): Path? {
     val staging = withContext(Dispatchers.IO) {
         Files.createTempDirectory("kmp-wizard-").toFile()
     }
     try {
-        withContext(Dispatchers.IO) {
+        return withContext(Dispatchers.IO) {
             generate(staging)
             ensureActive() // last chance to bail out before touching the project root
-            RootCommit(rootDir, copyFile).run(staging, replacedPaths)
+            RootCommit(rootDir, copyFile, deleteTree).run(staging, replacedPaths).also { onCommitted() }
         }
     } finally {
         withContext(NonCancellable + Dispatchers.IO) {
@@ -62,6 +79,12 @@ internal suspend fun generateStagedThenCommit(
 
 private fun copyPreservingAttributes(source: Path, target: Path) {
     Files.copy(source, target, StandardCopyOption.COPY_ATTRIBUTES)
+}
+
+/** Deletes everything it can, then throws with each failed entry attached as suppressed. */
+@OptIn(ExperimentalPathApi::class) // Path.deleteRecursively is still experimental in Kotlin 2.4
+private fun deleteTreeOrThrow(path: Path) {
+    path.deleteRecursively()
 }
 
 /**
@@ -76,13 +99,15 @@ private fun copyPreservingAttributes(source: Path, target: Path) {
 private class RootCommit(
     private val rootDir: File,
     private val copyFile: (Path, Path) -> Unit,
+    private val deleteTree: (Path) -> Unit,
 ) {
     private val createdDirs = mutableListOf<Path>()
     private val createdFiles = mutableListOf<Path>()
     private val displaced = mutableListOf<Pair<Path, Path>>() // original -> backup
     private var backupDir: Path? = null
 
-    fun run(staging: File, replacedPaths: List<String>) {
+    /** Commits, returning the backup directory if it outlived the commit (see [generateStagedThenCommit]). */
+    fun run(staging: File, replacedPaths: List<String>): Path? {
         try {
             ensureDirectory(rootDir.toPath())
             replacedPaths.forEach { moveAside(rootDir.toPath().resolve(it)) }
@@ -94,8 +119,16 @@ private class RootCommit(
             rollBack(e)
             throw e
         }
-        // Committed: the displaced originals are no longer needed.
-        backupDir?.toFile()?.deleteRecursively()
+        // Committed: the displaced originals are no longer needed. Failing to remove them
+        // must not undo a complete project — report the leftover instead.
+        val backup = backupDir ?: return null
+        return try {
+            deleteTree(backup)
+            null
+        } catch (e: IOException) {
+            LOG.warn("KMP Wizard: Could not remove the commit backup $backup", e)
+            backup
+        }
     }
 
     private fun copyTree(staging: Path) {
@@ -157,7 +190,7 @@ private class RootCommit(
                 Files.move(backup, original)
             }
         }
-        backupDir?.let { dir -> attempt { if (!dir.toFile().deleteRecursively()) throw IOException("Could not delete $dir") } }
+        backupDir?.let { dir -> attempt { deleteTree(dir) } }
     }
 
     private fun Path.relativeTo(base: Path): Path = base.relativize(this)

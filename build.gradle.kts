@@ -348,6 +348,10 @@ val templateRenamedFiles = mapOf(
  *      PascalCase  → {{FEATURE_NAME}}          (class / type names)
  *      lower_snake → {{FEATURE_NAME_LOWER}}     (module dirs, NavKey files, DB columns …)
  *      camelCase   → {{FEATURE_NAME_CAMEL}}     (variable / function names)
+ *    In Kotlin sources, code tokens starting with lowercase "posting" are classified
+ *    first by KotlinFeatureTokenRewriter (camel unless snake-joined or a package
+ *    segment); the bare "posting" rule below then only sees strings, comments and
+ *    non-Kotlin files.
  */
 val templateSubstitutions = listOf(
 
@@ -402,6 +406,156 @@ val templateSubstitutions = listOf(
     // path string as well as file contents — no extra entry needed here.
 )
 
+/**
+ * The lowercase feature literal whose *code* occurrences in Kotlin sources (.kt/.kts)
+ * are classified by [KotlinFeatureTokenRewriter] before the table above runs. The table
+ * alone can only say "bare posting → lower_snake", which renders `my_featureDao` and
+ * `val my_features` for a multi-word feature; the rewriter emits camelCase there instead.
+ */
+val templateKotlinFeatureLiteral = "posting"
+
+/**
+ * Rewrites code identifiers that begin with the lowercase feature literal in one Kotlin
+ * source file, choosing the placeholder each one's role needs:
+ *  - `{{FEATURE_NAME_LOWER}}` for a snake-joined token (`posting_list_title`, a Compose
+ *    resource key that must match strings.xml), a `package` segment, or a non-final
+ *    `import` segment — packages and module directories are lower_snake;
+ *  - `{{FEATURE_NAME_CAMEL}}` everywhere else — locals, properties, functions, the
+ *    imported name itself (`postingDao`, `postings`, `_postings`, `uiState.posting.id`).
+ *
+ * String/char literals, comments and backtick names are copied verbatim (so the literal
+ * table maps them to lower_snake, as before): `tableName = "postings"` must keep matching
+ * the Room schema JSON and UI-test strings must keep matching strings.xml. Code inside
+ * string templates (`"${posting.id}"`) is still rewritten. For a one-word feature camel
+ * == lower, so rendered output is unchanged by this pass.
+ */
+class KotlinFeatureTokenRewriter(
+    private val src: String,
+    private val literal: String,
+    private val camelPlaceholder: String,
+    private val lowerPlaceholder: String,
+) {
+    private val out = StringBuilder(src.length + 256)
+    private var i = 0
+    private var atLineStart = true
+    private var directive: String? = null // "package" / "import" while on such a line
+
+    fun rewrite(): String {
+        code(insideTemplate = false)
+        return out.toString()
+    }
+
+    private fun startsWithAt(s: String) = src.startsWith(s, i)
+
+    private fun copy(n: Int = 1) {
+        val end = minOf(i + n, src.length)
+        out.append(src, i, end)
+        i = end
+    }
+
+    /** Copies code until the end of input or, inside `${…}`, until its closing brace. */
+    private fun code(insideTemplate: Boolean) {
+        var depth = 0
+        while (i < src.length) {
+            val c = src[i]
+            when {
+                c == '\n' -> { directive = null; atLineStart = true; copy() }
+                startsWithAt("//") -> while (i < src.length && src[i] != '\n') copy()
+                startsWithAt("/*") -> blockComment()
+                startsWithAt("\"\"\"") -> rawString()
+                c == '"' -> string()
+                c == '\'' -> delimited('\'')
+                c == '`' -> delimited('`')
+                c.isLetter() || c == '_' -> identifier()
+                insideTemplate && c == '{' -> { depth++; copy() }
+                insideTemplate && c == '}' -> if (depth == 0) return else { depth--; copy() }
+                else -> { if (!c.isWhitespace()) atLineStart = false; copy() }
+            }
+        }
+    }
+
+    private fun identifier() {
+        val start = i
+        while (i < src.length && (src[i].isLetterOrDigit() || src[i] == '_')) i++
+        val token = src.substring(start, i)
+        if (atLineStart && (token == "package" || token == "import")) directive = token
+        atLineStart = false
+        // Backing properties (`_postings`) keep their underscore prefix.
+        val prefix = token.takeWhile { it == '_' }
+        val name = token.substring(prefix.length)
+        if (!name.startsWith(literal)) {
+            out.append(token)
+            return
+        }
+        val rest = name.substring(literal.length)
+        val lower = rest.startsWith("_") ||
+            directive == "package" ||
+            (directive == "import" && src.getOrNull(i) == '.')
+        out.append(prefix).append(if (lower) lowerPlaceholder else camelPlaceholder).append(rest)
+    }
+
+    /** Kotlin block comments nest. */
+    private fun blockComment() {
+        var depth = 0
+        while (i < src.length) {
+            when {
+                startsWithAt("/*") -> { depth++; copy(2) }
+                startsWithAt("*/") -> { depth--; copy(2); if (depth == 0) return }
+                else -> copy()
+            }
+        }
+    }
+
+    private fun string() {
+        copy() // opening quote
+        while (i < src.length) {
+            when (src[i]) {
+                '\\' -> copy(2)
+                '"' -> { copy(); return }
+                '$' -> template()
+                '\n' -> return // unterminated — leave the newline to code()
+                else -> copy()
+            }
+        }
+    }
+
+    private fun rawString() {
+        copy(3)
+        while (i < src.length) {
+            when {
+                // A closing run may be longer than three quotes; the extras are content.
+                startsWithAt("\"\"\"") -> { while (i < src.length && src[i] == '"') copy(); return }
+                src[i] == '$' -> template()
+                else -> copy()
+            }
+        }
+    }
+
+    /** `$name` or `${expr}` inside a string: the referenced code is rewritten too. */
+    private fun template() {
+        val next = src.getOrNull(i + 1)
+        when {
+            next == '{' -> {
+                copy(2)
+                code(insideTemplate = true)
+                if (i < src.length) copy() // closing brace
+            }
+            next != null && (next.isLetter() || next == '_') -> { copy(); identifier() }
+            else -> copy()
+        }
+    }
+
+    /** A char literal or backtick name, copied verbatim. */
+    private fun delimited(delimiter: Char) {
+        atLineStart = false
+        copy()
+        while (i < src.length && src[i] != delimiter && src[i] != '\n') {
+            if (src[i] == '\\' && delimiter == '\'') copy(2) else copy()
+        }
+        if (i < src.length && src[i] == delimiter) copy()
+    }
+}
+
 // ── Task ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -438,6 +592,10 @@ abstract class GenerateTemplatesTask : DefaultTask() {
     @get:Input
     abstract val renamedFiles: MapProperty<String, String>
 
+    /** Lowercase feature literal classified per code token in Kotlin sources. */
+    @get:Input
+    abstract val kotlinFeatureLiteral: Property<String>
+
     @get:OutputDirectory
     abstract val templatesDir: DirectoryProperty
 
@@ -451,9 +609,17 @@ abstract class GenerateTemplatesTask : DefaultTask() {
         val skipSuffixes = excludedFileSuffixes.get()
         val binaryExts = binaryExtensions.get()
         val renames    = renamedFiles.get()
+        val featureLiteral = kotlinFeatureLiteral.get()
 
         fun String.applySubstitutions(): String =
             subs.fold(this) { acc, (literal, placeholder) -> acc.replace(literal, placeholder) }
+
+        // Kotlin sources get the token-aware feature pass first; the literal table then
+        // handles everything it left alone (strings, comments, every other literal).
+        fun String.applyKotlinFeatureTokens(): String =
+            KotlinFeatureTokenRewriter(this, featureLiteral, "{{FEATURE_NAME_CAMEL}}", "{{FEATURE_NAME_LOWER}}").rewrite()
+
+        fun File.isKotlinSource() = name.endsWith(".kt") || name.endsWith(".kts")
 
         // Exclusion is decided on path segments *relative to the source root* —
         // the extracted archive lives under build/ledger-src, so a walk up the
@@ -531,7 +697,9 @@ abstract class GenerateTemplatesTask : DefaultTask() {
                             stats.fallback++
                             logger.warn("  [fallback binary] $relativePath")
                         } else {
-                            val substituted = original.applySubstitutions()
+                            val substituted = original
+                                .let { if (sourceFile.isKotlinSource()) it.applyKotlinFeatureTokens() else it }
+                                .applySubstitutions()
                             destFile.writeText(substituted, Charsets.UTF_8)
                             stats.text++
                             if (original != substituted) {
@@ -598,6 +766,7 @@ val generateTemplates = tasks.register<GenerateTemplatesTask>("generateTemplates
     excludedFileSuffixes.set(templateExcludedFileSuffixes)
     binaryExtensions.set(templateBinaryExtensions)
     renamedFiles.set(templateRenamedFiles)
+    kotlinFeatureLiteral.set(templateKotlinFeatureLiteral)
     templatesDir.set(layout.buildDirectory.dir("generated-resources/templates"))
 }
 
@@ -671,6 +840,24 @@ val verifyProductDescriptor = tasks.register("verifyProductDescriptor") {
 
 tasks.named("check") {
     dependsOn(verifyProductDescriptor)
+}
+
+tasks.publishPlugin {
+    // publishPlugin depends on neither `check` nor `verifyPlugin`, so a local
+    // `./gradlew publishPlugin` would otherwise skip the descriptor guard entirely.
+    dependsOn(verifyProductDescriptor)
+
+    // CI publishes the exact ZIP that release-prepare.yml verified, attested and attached
+    // to the draft GitHub Release (-PpublishArchive=<path>), instead of rebuilding one from
+    // the tag. Unset — the local case — the IPGP default (buildPlugin's archive) applies.
+    providers.gradleProperty("publishArchive").orNull?.let { path ->
+        val archive = file(path)
+        require(archive.isFile) { "publishArchive '$path' does not exist or is not a file" }
+        archiveFiles.setFrom(archive)
+        // IPGP wires buildPlugin/signPlugin in explicitly; a pre-built archive needs neither,
+        // and rebuilding would only be wasted work whose output is never uploaded.
+        setDependsOn(listOf(verifyProductDescriptor))
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

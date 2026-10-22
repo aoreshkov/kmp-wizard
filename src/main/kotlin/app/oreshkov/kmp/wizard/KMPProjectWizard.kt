@@ -27,9 +27,11 @@ import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.observable.util.not
 import com.intellij.openapi.util.IconLoader
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.platform.ide.progress.withBackgroundProgress
@@ -38,17 +40,75 @@ import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.plugins.gradle.service.project.open.linkAndSyncGradleProject
 import org.jetbrains.plugins.gradle.util.GradleConstants
 import java.io.File
+import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.Icon
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
+/**
+ * Project-level coroutine scope for generation, and the parent disposable of the IDEA
+ * path's apiDump listener — a plugin service rather than the [Project] itself, so the
+ * listener also goes away when the plugin is unloaded.
+ */
 @Service(Service.Level.PROJECT)
-internal class KMPWizardCoroutineService(val scope: CoroutineScope)
+internal class KMPWizardCoroutineService(val scope: CoroutineScope) : Disposable {
+    override fun dispose() = Unit
+}
+
+/** How long an Android Studio apiDump listener waits for its project's first sync. */
+internal val API_DUMP_LISTENER_TIMEOUT: Duration = 30.minutes
+
+/**
+ * Owns the lifetimes of the Android Studio path's apiDump listeners, which have no project
+ * to hang off (see [scheduleApiDumpAfterFirstSync]). One pending listener per project root:
+ * scheduling again for the same root replaces it, so regenerating into a path cannot run
+ * apiDump twice. Each lifetime also ends after [API_DUMP_LISTENER_TIMEOUT] in case the
+ * first sync never comes, and all of them end when the plugin is unloaded (this service
+ * is their parent disposable).
+ */
+@Service(Service.Level.APP)
+internal class KMPWizardAppService(private val scope: CoroutineScope) : Disposable {
+
+    private val pending = ConcurrentHashMap<String, Disposable>()
+
+    /**
+     * A fresh lifetime for the apiDump listener of [rootPath], ending any pending one for
+     * the same root. [awaitTimeout] is injectable so tests can expire it on demand.
+     */
+    fun apiDumpListenerLifetime(
+        rootPath: String,
+        timeout: Duration = API_DUMP_LISTENER_TIMEOUT,
+        awaitTimeout: suspend (Duration) -> Unit = { delay(it) },
+    ): Disposable {
+        val key = FileUtil.toCanonicalPath(rootPath)
+        val lifetime = Disposer.newDisposable(this, "kmp-apiDump:$key")
+        Disposer.register(lifetime) { pending.remove(key, lifetime) }
+        pending.put(key, lifetime)?.let(Disposer::dispose)
+
+        // Started only once its cancellation is tied to the lifetime, so an expiry can never
+        // race the registration below.
+        val expiry = scope.launch(start = CoroutineStart.LAZY) {
+            awaitTimeout(timeout)
+            LOG.info("KMP Wizard: No Gradle sync of $key within $timeout — dropping its apiDump listener.")
+            Disposer.dispose(lifetime)
+        }
+        Disposer.register(lifetime) { expiry.cancel() }
+        expiry.start()
+        return lifetime
+    }
+
+    override fun dispose() = Unit
+}
 
 private val LOG = logger<KMPProjectWizard>()
 
@@ -68,6 +128,75 @@ internal fun notify(project: Project?, title: String, content: String, type: Not
         .getNotificationGroup(NOTIFICATION_GROUP_ID)
         .createNotification(title, content, type)
         .notify(project)
+}
+
+/**
+ * The success balloon — downgraded to a warning that names the leftover when the commit
+ * could not remove its backup directory (see [generateStagedThenCommit]).
+ */
+internal fun notifyGenerated(project: Project?, projectName: String, leftoverBackup: Path?) {
+    if (leftoverBackup == null) {
+        notify(
+            project,
+            KMPWizardBundle.message("notify.success.title"),
+            KMPWizardBundle.message("notify.success.content", projectName),
+            NotificationType.INFORMATION,
+        )
+    } else {
+        notify(
+            project,
+            KMPWizardBundle.message("notify.success.title"),
+            KMPWizardBundle.message("notify.success.leftoverBackup", projectName, leftoverBackup.toString()),
+            NotificationType.WARNING,
+        )
+    }
+}
+
+/**
+ * Runs one generation and tells the user how it ended. [generate] receives the hook to
+ * pass on as [generateStagedThenCommit]'s `onCommitted`, and returns its leftover backup.
+ *
+ * A cancel is rethrown, as cancellation must be; it is silent while nothing has been
+ * written, but once the project is on disk the user is told it exists and was never
+ * linked to Gradle — otherwise a Cancel during the VFS refresh or the link leaves a
+ * project nobody mentions. Deliberately no `NonCancellable` around the link to avoid
+ * this: that is reserved for short cleanup, and a Gradle link is neither.
+ *
+ * Internal so the routing is testable without a Gradle sync.
+ */
+internal suspend fun reportGenerationOutcome(
+    project: Project?,
+    projectName: String,
+    generate: suspend (onCommitted: () -> Unit) -> Path?,
+) {
+    val committed = AtomicBoolean(false)
+    try {
+        val leftoverBackup = generate { committed.set(true) }
+        notifyGenerated(project, projectName, leftoverBackup)
+    } catch (e: CancellationException) {
+        if (committed.get()) {
+            LOG.info("KMP Wizard: Cancelled after the project was written — it is not linked to Gradle.")
+            notify(
+                project,
+                KMPWizardBundle.message("notify.cancelledAfterCommit.title"),
+                KMPWizardBundle.message("notify.cancelledAfterCommit.content", projectName),
+                NotificationType.WARNING,
+            )
+        } else {
+            LOG.info("KMP Wizard: Generation cancelled.")
+        }
+        throw e
+    } catch (e: Exception) {
+        // warn, not error: Logger.error would raise the IDE's "fatal errors" dialog
+        // for a failure that is fully handled here (cleanup + user notification).
+        LOG.warn("KMP Wizard: Generation failed", e)
+        notify(
+            project,
+            KMPWizardBundle.message("notify.failure.title"),
+            KMPWizardBundle.message("notify.failure.content", e.message ?: e.toString()),
+            NotificationType.ERROR,
+        )
+    }
 }
 
 /**
@@ -140,25 +269,31 @@ internal class ApiDumpAfterSyncListener(
  * user's code produces — the first valid dump must come from `apiDump` on the
  * generated sources. Must be called *before* the sync is scheduled so the
  * resolve-finished event cannot be missed. The listener self-removes after the
- * first resolve of [rootPath]; [project] parents it so an abandoned project
- * cannot leak it.
+ * first resolve of [rootPath]; the project's [KMPWizardCoroutineService] parents it so
+ * an abandoned project or an unloaded plugin cannot leak it.
  */
 internal fun scheduleApiDumpAfterSync(project: Project, rootPath: String) {
-    ExternalSystemProgressNotificationManager.getInstance()
-        .addNotificationListener(ApiDumpAfterSyncListener(rootPath, resolveProject = { project }), project)
+    ExternalSystemProgressNotificationManager.getInstance().addNotificationListener(
+        ApiDumpAfterSyncListener(rootPath, resolveProject = { project }),
+        project.service<KMPWizardCoroutineService>(),
+    )
 }
 
 /**
  * [scheduleApiDumpAfterSync] for callers with no [Project] handle — the Android Studio
  * template recipe, which runs while Studio is still assembling the project.
  *
- * The listener is registered application-level (no parent disposable is available) and
- * resolves the project from the sync task itself; it unsubscribes on the first matching
- * resolve, whatever its outcome.
+ * The listener resolves the project from the sync task itself and unsubscribes on the
+ * first matching resolve, whatever its outcome. Its lifetime comes from
+ * [KMPWizardAppService]: replaced if the same root is scheduled again, and ended after a
+ * timeout or on plugin unload if that first resolve never arrives.
  */
 internal fun scheduleApiDumpAfterFirstSync(rootPath: String) {
-    ExternalSystemProgressNotificationManager.getInstance()
-        .addNotificationListener(ApiDumpAfterSyncListener(rootPath, ExternalSystemTaskId::findProject))
+    val lifetime = service<KMPWizardAppService>().apiDumpListenerLifetime(rootPath)
+    ExternalSystemProgressNotificationManager.getInstance().addNotificationListener(
+        ApiDumpAfterSyncListener(rootPath, ExternalSystemTaskId::findProject, unsubscribe = { Disposer.dispose(lifetime) }),
+        lifetime,
+    )
 }
 
 private fun runApiDump(project: Project, rootPath: String) {
@@ -295,7 +430,9 @@ class KMPProjectWizard : GeneratorNewProjectWizard {
                                     error(KMPWizardBundle.message("settings.identifier.error.charset"))
                                 WizardInputValidation.isReservedIdentifier(name) ->
                                     error(KMPWizardBundle.message("settings.identifier.error.reserved", name))
-                                else -> null
+                                else -> WizardInputValidation.templateMemberCollision(name)?.let { member ->
+                                    error(KMPWizardBundle.message("settings.field.error.templateMember", name, member))
+                                }
                             }
                         }
                 }
@@ -373,23 +510,25 @@ class KMPProjectWizard : GeneratorNewProjectWizard {
                 includeAndroid = includeAndroid,
                 includeDesktop = includeDesktop,
                 includeIos = includeIos,
-                // Re-check entitlement here so generation can never be driven Pro-on
-                // without a license, independent of the UI's enabled state.
-                includeAgentConfig = includeAgentConfig && pro,
-                includeCi = includeCi && pro,
+                includeAgentConfig = includeAgentConfig,
+                includeCi = includeCi,
             )
+                // Re-read the entitlement now rather than trusting `pro`, which was only set
+                // when the step was built: the license may have lapsed since. Same live check
+                // as the Android Studio path's render-time KMPLicense.isPro().
+                .withEntitlement(KMPLicense.isPro())
 
             val rootDir = File(base.path).resolve(base.name)
             val projectName = base.name
             LOG.info("KMP Wizard: Starting generation at ${rootDir.absolutePath}")
 
             project.service<KMPWizardCoroutineService>().scope.launch {
-                try {
+                reportGenerationOutcome(project, projectName) { onCommitted ->
                     withBackgroundProgress(project, KMPWizardBundle.message("progress.generating", projectName), cancellable = true) {
                         LOG.info("KMP Wizard: Rendering templates...")
                         // Staging isolation, commit-on-success, and cleanup live in
                         // generateStagedThenCommit (unit-tested there).
-                        generateStagedThenCommit(rootDir) { staging ->
+                        val leftoverBackup = generateStagedThenCommit(rootDir, onCommitted = onCommitted) { staging ->
                             ProjectStructureGenerator(settings).generate(staging)
                         }
 
@@ -415,27 +554,8 @@ class KMPProjectWizard : GeneratorNewProjectWizard {
                             linkAndSyncGradleProject(project, rootDir.absolutePath)
                         }
                         LOG.info("KMP Wizard: Generation complete.")
+                        leftoverBackup
                     }
-
-                    notify(
-                        project,
-                        KMPWizardBundle.message("notify.success.title"),
-                        KMPWizardBundle.message("notify.success.content", projectName),
-                        NotificationType.INFORMATION,
-                    )
-                } catch (e: CancellationException) {
-                    LOG.info("KMP Wizard: Generation cancelled.")
-                    throw e
-                } catch (e: Exception) {
-                    // warn, not error: Logger.error would raise the IDE's "fatal errors" dialog
-                    // for a failure that is fully handled here (cleanup + user notification).
-                    LOG.warn("KMP Wizard: Generation failed", e)
-                    notify(
-                        project,
-                        KMPWizardBundle.message("notify.failure.title"),
-                        KMPWizardBundle.message("notify.failure.content", e.message ?: e.toString()),
-                        NotificationType.ERROR,
-                    )
                 }
             }
         }

@@ -1,9 +1,16 @@
-# Publishes the plugin to the JetBrains Marketplace when a GitHub Release is
-# published (the draft-release gate — see .claude/skills/release/SKILL.md).
+# Stage 2 of a release: publishes the plugin to the JetBrains Marketplace when the
+# draft GitHub Release is published (the gate — see .claude/skills/release/SKILL.md).
 #
-# PUBLISH_TOKEN (marketplace environment) is the only secret. Author-side
-# plugin signing is deliberately omitted: JetBrains Marketplace does not
-# support signature verification (staff statement, 2026-05 —
+# Nothing is built here. release-prepare.yml already tested, verified and built the
+# ZIP from the draft's pinned commit, attested it, and attached it to the draft. This
+# workflow downloads that asset, checks its attestation was signed by
+# release-prepare.yml *for the tag's own commit*, and publishes those exact bytes.
+# It never writes to the release, so a re-run (e.g. after a Marketplace outage) only
+# downloads and publishes again — and it works with immutable releases.
+#
+# PUBLISH_TOKEN (marketplace environment) is the only secret, and only the publish
+# job can see it. Author-side plugin signing is deliberately omitted: JetBrains
+# Marketplace does not support signature verification (staff statement, 2026-05 —
 # https://platform.jetbrains.com/t/-/2584), so signPlugin would be a no-op.
 # Revisit if JetBrains ever enables verification.
 #
@@ -15,23 +22,71 @@ on:
   release:
     types: [released]
 
-permissions:
-  contents: write # upload the plugin ZIP as a release asset
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Publish to Marketplace
+  check:
+    name: Check release asset
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 10
+    permissions:
+      contents: read     # download the release asset
+      attestations: read # look up its provenance attestation
+    steps:
+      - name: Download the attached plugin ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p '*.zip' -D dist
+          count=$(find dist -name '*.zip' | wc -l)
+          [[ "$count" -eq 1 ]] || { echo "::error::Expected exactly one ZIP on $TAG, found $count — was release-prepare.yml run?"; exit 1; }
+          [[ "$(basename dist/*.zip)" == *"-${TAG#v}.zip" ]] || { echo "::error::$(basename dist/*.zip) is not the $TAG build"; exit 1; }
+
+      # GITHUB_SHA is the tagged commit. The attestation's source digest is the commit
+      # release-prepare.yml built from, so this proves the ZIP is that commit's build.
+      - name: Verify build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify dist/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release-prepare.yml" \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners
+
+      - name: Hand the ZIP to the publish job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-distribution
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish to Marketplace
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: marketplace
+    permissions:
+      contents: read
     steps:
       # The default ref on the release event is the release tag.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download plugin ZIP
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plugin-distribution
+          path: ${{ runner.temp }}/dist
 
       - name: Set up JDK 21
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -45,12 +100,6 @@ jobs:
           cache-read-only: true
 
       - name: Publish plugin
-        run: ./gradlew publishPlugin
+        run: ./gradlew publishPlugin "-PpublishArchive=$(echo "$RUNNER_TEMP"/dist/*.zip)"
         env:
           PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
-
-      - name: Attach plugin ZIP to the release
-        run: gh release upload "$TAG_NAME" build/distributions/*.zip --clobber
-        env:
-          TAG_NAME: ${{ github.event.release.tag_name }}
-          GH_TOKEN: ${{ github.token }}

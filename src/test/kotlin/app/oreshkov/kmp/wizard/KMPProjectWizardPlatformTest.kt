@@ -8,6 +8,10 @@ import com.intellij.notification.NotificationType
 import com.intellij.notification.Notifications
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
+import java.io.IOException
+import java.nio.file.Path
 import kotlin.io.path.createTempDirectory
 
 /**
@@ -57,6 +61,103 @@ class KMPProjectWizardPlatformTest : BasePlatformTestCase() {
         assertEquals(NotificationType.ERROR, failure.type)
         assertEquals(failureTitle, failure.title)
         assertEquals(failureContent, failure.content)
+    }
+
+    // ── reportGenerationOutcome: what the user is told about each ending ─────────
+
+    fun testCancelAfterCommitWarnsThatTheProjectIsNotLinked() {
+        val received = collectNotifications()
+
+        val thrown = runCatching {
+            runBlocking {
+                reportGenerationOutcome(project, "Ledger") { onCommitted ->
+                    onCommitted()
+                    throw CancellationException("Cancel pressed during the Gradle link")
+                }
+            }
+        }.exceptionOrNull()
+
+        assertTrue("cancellation must be rethrown, got $thrown", thrown is CancellationException)
+        assertEquals(1, received.size)
+        assertEquals(NotificationType.WARNING, received[0].type)
+        assertEquals(KMPWizardBundle.message("notify.cancelledAfterCommit.title"), received[0].title)
+        assertEquals(KMPWizardBundle.message("notify.cancelledAfterCommit.content", "Ledger"), received[0].content)
+    }
+
+    fun testCancelBeforeCommitIsSilent() {
+        val received = collectNotifications()
+
+        val thrown = runCatching {
+            runBlocking {
+                reportGenerationOutcome(project, "Ledger") { throw CancellationException("Cancel pressed while rendering") }
+            }
+        }.exceptionOrNull()
+
+        assertTrue("cancellation must be rethrown, got $thrown", thrown is CancellationException)
+        assertEquals("nothing was written, so nothing to report", 0, received.size)
+    }
+
+    fun testLeftoverBackupTurnsSuccessIntoAWarningNamingIt() {
+        val received = collectNotifications()
+        val leftover = Path.of("/work/Ledger/.kmp-wizard-backup-1")
+
+        runBlocking { reportGenerationOutcome(project, "Ledger") { onCommitted -> onCommitted(); leftover } }
+
+        assertEquals(1, received.size)
+        assertEquals(NotificationType.WARNING, received[0].type)
+        assertEquals(KMPWizardBundle.message("notify.success.leftoverBackup", "Ledger", leftover.toString()), received[0].content)
+    }
+
+    fun testFailureIsReportedAndNotRethrown() {
+        val received = collectNotifications()
+
+        runBlocking { reportGenerationOutcome(project, "Ledger") { throw IOException("disk full") } }
+
+        assertEquals(1, received.size)
+        assertEquals(NotificationType.ERROR, received[0].type)
+        assertEquals(KMPWizardBundle.message("notify.failure.content", "disk full"), received[0].content)
+    }
+
+    // ── Pro entitlement gate ─────────────────────────────────────────────────
+
+    fun testALapsedLicenseStripsProOutputRequestedInTheForm() {
+        // The form's checkboxes were set while licensed; generation re-reads the license
+        // and must drop both Pro features if it no longer holds.
+        val requested = KMPProjectSettings(includeAgentConfig = true, includeCi = true)
+
+        val unlicensed = requested.withEntitlement(licensed = false)
+        assertFalse(unlicensed.includeAgentConfig)
+        assertFalse(unlicensed.includeCi)
+
+        val dir = createTempDirectory("kmp_platform_").toFile()
+        try {
+            ProjectStructureGenerator(unlicensed).generate(dir)
+            assertFalse("CLAUDE.md must be stripped", dir.resolve("CLAUDE.md").exists())
+            assertFalse(".claude must be stripped", dir.resolve(".claude").exists())
+            assertFalse(".github must be stripped", dir.resolve(".github").exists())
+        } finally {
+            dir.deleteRecursively()
+        }
+
+        val licensed = requested.withEntitlement(licensed = true)
+        assertTrue("an entitlement keeps what was requested", licensed.includeAgentConfig && licensed.includeCi)
+        assertFalse(
+            "an entitlement never turns a feature on",
+            requested.copy(includeCi = false).withEntitlement(licensed = true).includeCi,
+        )
+    }
+
+    private fun collectNotifications(): MutableList<Notification> {
+        val received = mutableListOf<Notification>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            Notifications.TOPIC,
+            object : Notifications {
+                override fun notify(notification: Notification) {
+                    received.add(notification)
+                }
+            },
+        )
+        return received
     }
 
     fun testIsProIsFalseWithoutALicense() {

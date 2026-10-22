@@ -1,5 +1,6 @@
 package app.oreshkov.kmp.wizard
 
+import app.oreshkov.kmp.wizard.template.ProjectStructureGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -12,6 +13,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeFalse
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.File
@@ -135,6 +137,54 @@ class StagedGenerationTest {
         generateStagedThenCommit(rootDir, replacedPaths = listOf("app", "absent")) { s -> writeProject(s) }
         assertFalse("a replaced path must be gone after a successful commit", rootDir.resolve("app").exists())
         assertTrue(rootDir.resolve("feature/impl/Screen.kt").isFile)
+    }
+
+    @Test fun `a prune that fails in staging aborts before the root is touched`() = runBlocking {
+        val probe = tempDir.resolve("probe/locked").apply { parentFile.mkdirs(); writeText("x") }
+        assumeTrue("cannot make a file undeletable here", holdUndeletable(probe)?.also { it.close() } != null)
+        var committed = false
+
+        val result = runCatching {
+            generateStagedThenCommit(rootDir, onCommitted = { committed = true }) { staging ->
+                writeProject(staging)
+                val locked = staging.resolve("androidApp/src/Locked.kt").apply { parentFile.mkdirs(); writeText("x") }
+                // Released before generateStagedThenCommit cleans staging up.
+                holdUndeletable(locked)!!.use {
+                    ProjectStructureGenerator(KMPProjectSettings(includeAndroid = false)).postProcess(staging)
+                }
+            }
+        }
+
+        assertTrue("the prune failure must propagate", result.exceptionOrNull() is IOException)
+        assertFalse("onCommitted must not run", committed)
+        assertFalse("project root must not exist — nothing may be committed", rootDir.exists())
+    }
+
+    @Test fun `a backup that outlives a successful commit is reported, not failed`() = runBlocking {
+        rootDir.mkdirs()
+        rootDir.resolve("settings.gradle.kts").writeText("// pre-existing") // forces a backup
+        var committed = false
+
+        val leftover = generateStagedThenCommit(
+            rootDir,
+            deleteTree = { throw IOException("held open by a scanner") },
+            onCommitted = { committed = true },
+        ) { s -> writeProject(s) }
+
+        assertTrue("the commit succeeded", committed)
+        assertEquals("rootProject.name = \"app\"\n", rootDir.resolve("settings.gradle.kts").readText())
+        assertNotNull("the leftover backup must be reported", leftover)
+        assertTrue(leftover!!.fileName.toString().startsWith(COMMIT_BACKUP_DIR_PREFIX))
+        assertEquals(rootDir.toPath(), leftover.parent)
+    }
+
+    @Test fun `a clean commit reports no leftover and signals the commit`() = runBlocking {
+        var committed = false
+
+        val leftover = generateStagedThenCommit(rootDir, onCommitted = { committed = true }) { s -> writeProject(s) }
+
+        assertTrue(committed)
+        assertEquals(null, leftover)
     }
 
     private fun writeProject(staging: File) {

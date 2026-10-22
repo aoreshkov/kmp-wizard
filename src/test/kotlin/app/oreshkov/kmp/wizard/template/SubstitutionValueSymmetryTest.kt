@@ -48,6 +48,30 @@ class SubstitutionValueSymmetryTest {
         )
     }
 
+    @Test fun `forward placeholders pick the case form their literal is written in, for multi-word names`() {
+        // The ledger's names are all one word, so camel == lower and the test above cannot
+        // tell {{FEATURE_NAME_CAMEL}} from {{FEATURE_NAME_LOWER}}. Re-spell every forward
+        // literal for multi-word names by its own casing — `postingId` is camel-joined, a
+        // bare `posting` (paths, resource keys, strings) is lower_snake — and require the
+        // placeholder side to render exactly that.
+        val reverse = TemplateRenderer.buildSubstitutions(multiWordSettings)
+        val mismatches = loadForwardPairs().mapNotNull { (literal, placeholder) ->
+            val expected = MULTI_WORD_RESPELLING.fold(literal) { acc, (pattern, replacement) -> acc.replace(pattern, replacement) }
+            val rendered = placeholder.applySubstitutions(reverse)
+            if (rendered != expected) "  $literal -> $placeholder rendered \"$rendered\", expected \"$expected\"" else null
+        }
+
+        assertTrue("Forward placeholders with the wrong case form:\n" + mismatches.joinToString("\n"), mismatches.isEmpty())
+    }
+
+    private val multiWordSettings = KMPProjectSettings(
+        appName = "My App",
+        packageName = "com.example.my.app",
+        featureName = "my_feature",
+        fieldName = "user_name",
+        testValueName = "Buy milk",
+    )
+
     private fun loadForwardPairs(): List<Pair<String, String>> =
         (javaClass.getResourceAsStream("/templates/SUBSTITUTIONS.txt")
             ?: error("SUBSTITUTIONS.txt not found on the test classpath — rerun generateTemplates"))
@@ -59,4 +83,23 @@ class SubstitutionValueSymmetryTest {
                     .also { require(it.size == 2) { "Malformed SUBSTITUTIONS.txt line: $line" } }
                 literal to placeholder
             }
+
+    private companion object {
+        /** The ledger's literals → [multiWordSettings]' values, chosen by the literal's own casing. */
+        val MULTI_WORD_RESPELLING = listOf(
+            Regex("""app\.oreshkov\.ledger""") to "com.example.my.app",
+            Regex("""app/oreshkov/ledger""") to "com/example/my/app",
+            Regex("""Ledger""") to "MyApp",
+            Regex("""ledger""") to "my_app",
+            Regex("""POSTING""") to "MY_FEATURE",
+            Regex("""Posting""") to "MyFeature",
+            Regex("""posting(?=[A-Z])""") to "myFeature",
+            Regex("""posting""") to "my_feature",
+            Regex("""NARRATIVE""") to "USER_NAME",
+            Regex("""Narrative""") to "UserName",
+            // The field placeholder is camelCase in every role (property, column, resource key).
+            Regex("""narrative""") to "userName",
+            Regex("""Groceries""") to "Buy milk",
+        )
+    }
 }

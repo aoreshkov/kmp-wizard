@@ -132,6 +132,20 @@ class LicenseManagerTest {
         assertFalse(LicenseManager.isConfirmationStampValid(stamp, testRoots))
     }
 
+    @Test fun `a genuinely signed stamp with a valid but unlisted RSA algorithm is rejected`() {
+        // The test above would fail even without the allow-list (an ECDSA verifier cannot
+        // take the RSA key). This stamp is signed AND declared with SHA384withRSA, so it
+        // verifies against the RSA fixture — only ALLOWED_STAMP_SIGNATURE_TYPES rejects it.
+        val stamp = signedServerStamp(
+            expectedMachineId = "machine-1",
+            machineId = "machine-1",
+            timeStamp = System.currentTimeMillis(),
+            sigType = "SHA384withRSA",
+            signingAlgorithm = "SHA384withRSA",
+        )
+        assertFalse(LicenseManager.isConfirmationStampValid(stamp, testRoots))
+    }
+
     // ── Signature verification is the gate (tampered payloads) ────────────────
     //
     // Every other rejection test fails for a reason unrelated to the signature. These
@@ -299,10 +313,10 @@ class LicenseManagerTest {
      * Builds a `stamp:` server reply
      * `stamp:<expectedMachineId>:<timeStamp>:<machineId>:<sigType>:<signature>:<cert>`
      * (parts split on ':'). The signed message is `<timeStamp>:<machineId>`.
-     * [sigType] is declared in the stamp; the actual signing always uses SHA256withRSA
-     * so an allow-list rejection is exercised on otherwise well-formed input.
-     * [signedMessage] defaults to what the stamp carries; overriding it models a stamp
-     * altered after signing.
+     * [sigType] is declared in the stamp; the actual signing uses [signingAlgorithm]
+     * (SHA256withRSA by default), so the two can disagree to exercise a rejection on
+     * otherwise well-formed input. [signedMessage] defaults to what the stamp carries;
+     * overriding it models a stamp altered after signing.
      */
     private fun signedServerStamp(
         expectedMachineId: String,
@@ -310,8 +324,9 @@ class LicenseManagerTest {
         timeStamp: Long,
         sigType: String = "SHA256withRSA",
         signedMessage: String = "$timeStamp:$machineId",
+        signingAlgorithm: String = "SHA256withRSA",
     ): String {
-        val signature = sign("SHA256withRSA", signedMessage.toByteArray(StandardCharsets.UTF_8))
+        val signature = sign(signingAlgorithm, signedMessage.toByteArray(StandardCharsets.UTF_8))
         return "stamp:$expectedMachineId:$timeStamp:$machineId:$sigType:${b64(signature)}:${b64(certificate.encoded)}"
     }
 

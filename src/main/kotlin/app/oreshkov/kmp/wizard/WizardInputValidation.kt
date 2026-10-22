@@ -1,6 +1,7 @@
 package app.oreshkov.kmp.wizard
 
 import app.oreshkov.kmp.wizard.template.TemplateRenderer.toCamelCase
+import app.oreshkov.kmp.wizard.template.TemplateRenderer.toPascalCase
 import app.oreshkov.kmp.wizard.template.TemplateRenderer.toSnakeCase
 
 /**
@@ -19,6 +20,12 @@ internal object WizardInputValidation {
 
     /** Used when a project name sanitizes to nothing (e.g. it is all punctuation). */
     private const val FALLBACK_PACKAGE_SEGMENT = "app"
+
+    /** Used when a project name yields no identifier at all (e.g. it has no Latin letters). */
+    private const val FALLBACK_APP_IDENTIFIER = "MyApp"
+
+    /** Prefix/suffix that repairs a digit-leading or reserved app identifier. */
+    private const val APP_IDENTIFIER_AFFIX = "App"
 
     /**
      * Words that can never be a package segment or a generated identifier.
@@ -41,6 +48,27 @@ internal object WizardInputValidation {
         "transient", "void", "volatile",
     )
 
+    /**
+     * Fixed members the templates declare in the same class as `{{FIELD_NAME}}`, so a field
+     * rendering to one of them redeclares it (`val id: String, val id: String`):
+     * - `{{FEATURE_NAME}}` (core/model) and `{{FEATURE_NAME}}Entity` (core/database):
+     *   `id`, plus the entity's sync metadata `updatedAt`, `isDeleted`, `pendingSync`;
+     * - `{{FEATURE_NAME}}EditUiState.Editing` (feature/impl `{{FEATURE_NAME}}EditViewModel.kt`):
+     *   `isEditMode`, `saveError`, `isValid`.
+     *
+     * A drift-guard test re-derives this set from the bundled templates, so a ledger bump
+     * that adds a member fails the build instead of shipping the collision.
+     */
+    val TEMPLATE_RESERVED_FIELDS: Set<String> =
+        setOf("id", "updatedAt", "isDeleted", "pendingSync", "isEditMode", "saveError", "isValid")
+
+    /**
+     * Suffixes of the members the templates derive from the field
+     * (`{{FIELD_NAME}}Touched`, `{{FIELD_NAME}}Error` in the edit UI state). Field `save`
+     * derives `saveError`, which clashes with a fixed member just like a direct hit.
+     */
+    val TEMPLATE_FIELD_DERIVED_SUFFIXES: List<String> = listOf("Touched", "Error")
+
     /** Derives a package segment from a project name: lowercased, non-[a-z0-9] stripped. */
     fun sanitize(name: String): String =
         name.lowercase().replace(SANITIZE_REGEX, "")
@@ -60,6 +88,26 @@ internal object WizardInputValidation {
             else -> segment
         }
         return DEFAULT_PACKAGE_PREFIX + repaired
+    }
+
+    /**
+     * The PascalCase identifier the templates build class names (`{{APP_NAME}}App`,
+     * `{{APP_NAME}}Database`) and, snake_cased, build-logic plugin IDs from — always a
+     * valid Kotlin identifier, whatever the project is called.
+     *
+     * Repaired rather than rejected, with the same policy as [defaultPackageName]: the
+     * project name is owned by the platform's base step (IDEA) or Studio's first page, so
+     * neither path can attach a validator to it, and `2048` or `Проект` is a perfectly good
+     * *directory* name. Only the code identifiers derived from it are repaired.
+     */
+    fun appIdentifier(projectName: String): String {
+        val pascal = projectName.toPascalCase()
+        return when {
+            pascal.isEmpty() -> FALLBACK_APP_IDENTIFIER
+            pascal.first().isDigit() -> APP_IDENTIFIER_AFFIX + pascal
+            pascal.lowercase() in RESERVED_WORDS -> pascal + APP_IDENTIFIER_AFFIX
+            else -> pascal
+        }
     }
 
     /** At least two lowercase dot-separated segments, each starting with a letter. */
@@ -89,6 +137,22 @@ internal object WizardInputValidation {
     /** Well-formed and not reserved in any generated form. */
     fun isValidIdentifier(identifier: String): Boolean =
         isWellFormedIdentifier(identifier) && !isReservedIdentifier(identifier)
+
+    /**
+     * The fixed template member [field] would clash with — as itself or through one of
+     * its derived members ([TEMPLATE_FIELD_DERIVED_SUFFIXES]) — or `null` if it clashes
+     * with none. Compared in camelCase, the form the templates declare the field in.
+     */
+    fun templateMemberCollision(field: String): String? {
+        val camel = field.toCamelCase()
+        return (listOf("") + TEMPLATE_FIELD_DERIVED_SUFFIXES)
+            .map { suffix -> camel + suffix }
+            .firstOrNull { it in TEMPLATE_RESERVED_FIELDS }
+    }
+
+    /** A valid identifier that also leaves the generated model compilable. */
+    fun isValidFieldName(field: String): Boolean =
+        isValidIdentifier(field) && templateMemberCollision(field) == null
 
     /**
      * Normalizes a free-form feature/field name to the canonical snake_case form the IDEA
