@@ -2,6 +2,8 @@ package app.oreshkov.kmp.wizard.template
 
 import app.oreshkov.kmp.wizard.KMPProjectSettings
 import java.io.File
+import kotlin.io.path.ExperimentalPathApi
+import kotlin.io.path.deleteRecursively
 
 class ProjectStructureGenerator(private val settings: KMPProjectSettings) {
 
@@ -14,18 +16,25 @@ class ProjectStructureGenerator(private val settings: KMPProjectSettings) {
 
     /**
      * Removes platform directories and their Gradle include() lines when the
-     * user has deselected a platform in the wizard.
+     * user has deselected a platform in the wizard, and the Pro scaffolding when
+     * the user is not entitled to it.
+     *
+     * Every removal throws if anything is left behind (a file held open by an
+     * antivirus scanner or indexer on Windows): a deselected module whose include()
+     * is already gone, or Pro files reaching a free user, must fail generation rather
+     * than ship. This runs against the staging directory, so the throw aborts before
+     * the project root is touched.
      */
     internal fun postProcess(targetDir: File) {
         if (!settings.includeAndroid) {
-            targetDir.resolve("androidApp").deleteRecursively()
+            targetDir.remove("androidApp")
         }
         if (!settings.includeDesktop) {
-            targetDir.resolve("desktopApp").deleteRecursively()
+            targetDir.remove("desktopApp")
         }
         if (!settings.includeIos) {
-            targetDir.resolve("iosApp").deleteRecursively()
-            targetDir.resolve("iosExport").deleteRecursively()
+            targetDir.remove("iosApp")
+            targetDir.remove("iosExport")
         }
         if (!settings.includeAndroid || !settings.includeDesktop || !settings.includeIos) {
             patchSettingsGradle(targetDir)
@@ -33,12 +42,22 @@ class ProjectStructureGenerator(private val settings: KMPProjectSettings) {
 
         // Pro tier: strip agent / CI scaffolding when the user is not entitled to it.
         if (!settings.includeAgentConfig) {
-            targetDir.resolve("CLAUDE.md").delete()
-            targetDir.resolve(".claude").deleteRecursively()
+            targetDir.remove("CLAUDE.md")
+            targetDir.remove(".claude")
         }
         if (!settings.includeCi) {
-            targetDir.resolve(".github").deleteRecursively()
+            targetDir.remove(".github")
         }
+    }
+
+    /**
+     * Deletes [relativePath] (file or directory tree; absent is fine). Unlike
+     * [File.deleteRecursively], which only reports `false`, this deletes everything
+     * it can and then throws, with each failed entry attached as a suppressed exception.
+     */
+    @OptIn(ExperimentalPathApi::class) // Path.deleteRecursively is still experimental in Kotlin 2.4
+    private fun File.remove(relativePath: String) {
+        toPath().resolve(relativePath).deleteRecursively()
     }
 
     private fun patchSettingsGradle(targetDir: File) {

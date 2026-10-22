@@ -4,7 +4,7 @@ description: Cut a new KMP Project Wizard release to the JetBrains Marketplace �
 disable-model-invocation: true
 argument-hint: [version]
 arguments: version
-allowed-tools: Bash(./gradlew*), Bash(git status*), Bash(git tag*), Bash(git diff*), Bash(git add*), Bash(git commit*), Bash(git ls-remote*), Bash(git fetch*), Bash(git push*), Bash(gh release*), Bash(gh secret*), Bash(gh run*), Bash(head*), Read, Edit, Glob, AskUserQuestion
+allowed-tools: Bash(./gradlew*), Bash(git status*), Bash(git tag*), Bash(git diff*), Bash(git add*), Bash(git commit*), Bash(git ls-remote*), Bash(git fetch*), Bash(git push*), Bash(git rev-parse*), Bash(gh release*), Bash(gh secret*), Bash(gh run*), Bash(gh workflow*), Bash(head*), Read, Edit, Glob, AskUserQuestion
 context: fork
 ---
 
@@ -22,11 +22,13 @@ step 4 — **not** the raw `$version` — is **the confirmed version** consumed 
 ## Repo facts (do not violate)
 
 - **Public remote:** `https://github.com/aoreshkov/kmp-wizard.git` (`origin`). Marketplace
-  publishing runs in **GitHub Actions** (`.github/workflows/release.yml`), triggered by
-  publishing the draft GitHub Release (step 10). GitHub creates the `vX.Y.Z` tag at that
-  moment — never create the tag locally; an aborted release (deleted draft) leaves no tag.
-  The `PUBLISH_TOKEN` secret lives in the repo's `marketplace` environment, not on this
-  machine.
+  publishing runs in **GitHub Actions** in two stages: `.github/workflows/release-prepare.yml`
+  (dispatched in step 9) tests, verifies and builds the draft's pinned commit, attests the ZIP
+  and attaches it to the draft; `.github/workflows/release.yml`, triggered by publishing the
+  draft (step 10), checks that attestation against the tag's commit and uploads that exact ZIP.
+  GitHub creates the `vX.Y.Z` tag at publish time, from the draft's `--target` commit — never
+  create the tag locally; an aborted release (deleted draft) leaves no tag. The
+  `PUBLISH_TOKEN` secret lives in the repo's `marketplace` environment, not on this machine.
 - **Never push the local `archive/pre-publish` branch or the pre-publish tags reachable only
   from it** — that history is private. Only push `main` and the new release tag.
 - The changelog version heading style is `## X.Y.Z - YYYY-MM-DD` (no brackets), matching the
@@ -73,7 +75,8 @@ git commit -m "chore: bump kmp-ledger templates to vX.Y.Z"
 The remaining checks — only needed later in the run. A missing item here does **not** block
 the early steps; it warns now so there is no surprise at the publish gate.
 
-- Confirm the publish workflow exists on `main`: `.github/workflows/release.yml` (Glob/Read).
+- Confirm both release workflows exist on `main`: `.github/workflows/release-prepare.yml` and
+  `.github/workflows/release.yml` (Glob/Read).
 - Confirm `PUBLISH_TOKEN` exists in the `marketplace` environment (values are unreadable —
   existence only): `gh secret list --env marketplace`. It is the **only** secret — author-side
   signing is deliberately omitted (the Marketplace does not support signature verification;
@@ -222,37 +225,69 @@ Do **not** create a tag — GitHub creates `v<confirmed version>` when the draft
 published in step 10. Pushing `main` here is safe: the release commit is inert until then.
 Never push `archive/pre-publish` or any pre-publish tag.
 
-### 9. Create the draft GitHub Release
+Record the release commit — the tree step 7 verified — as **`$SHA`** for steps 9–10:
 
 ```
-gh release create v<confirmed version> --draft --target main --title "v<confirmed version>" --notes "<the confirmed version's CHANGELOG section>"
+git rev-parse HEAD
+```
+
+### 9. Create the draft GitHub Release and prepare it
+
+Pin the draft to `$SHA` — **never `--target main`**: a draft stores a branch name as-is and
+GitHub creates the tag from wherever that branch points *at publish time*, so a merge in
+between would ship unverified code.
+
+```
+gh release create v<confirmed version> --draft --target <$SHA> --title "v<confirmed version>" --notes "<the confirmed version's CHANGELOG section>"
 ```
 
 Use the exact changelog section rolled in step 5 as the release notes. A draft creates no tag
 and triggers nothing — it is the staged, reviewable gate.
 
+Then have CI test, verify and build that commit, attest the ZIP and attach it to the draft:
+
+```
+gh workflow run release-prepare.yml --ref main -f tag=v<confirmed version>
+gh run watch $(gh run list --workflow=release-prepare.yml --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status
+```
+
+The workflow refuses to run unless the draft's target is a full SHA **equal to the commit it
+was dispatched on** (the provenance attestation records that commit, and `release.yml` matches
+it against the tag). If `main` moved after step 8 it fails saying so: delete the draft and redo
+the release from step 7 on the new `main`. A prepare run that failed for any other reason can
+simply be re-run once fixed — drafts accept re-uploads (`--clobber`).
+
 ### 10. Publish gate (irreversible)
 
-Publishing the release fires `.github/workflows/release.yml`, which runs
-`./gradlew publishPlugin` in CI — Marketplace publishing cannot be undone. **Ask the user to
-confirm explicitly** before it. If any secret was missing at preflight, **repeat that warning
-here**. Only on a clear "yes":
+Publishing the release fires `.github/workflows/release.yml`, which uploads the attached ZIP to
+the Marketplace — Marketplace publishing cannot be undone. Before asking, check **all** of:
+
+- the step-9 `release-prepare.yml` run is **green**;
+- the draft still targets `$SHA` and carries the ZIP:
+  `gh release view v<confirmed version> --json targetCommitish,assets --jq '.targetCommitish, .assets[].name'`
+  → `targetCommitish` **equals `$SHA`** and the only asset is `KMPWizard-<confirmed version>.zip`.
+
+On any mismatch, **refuse to publish** and report. Otherwise **ask the user to confirm
+explicitly**. If any secret was missing at preflight, **repeat that warning here**. Only on a
+clear "yes":
 
 ```
 gh release edit v<confirmed version> --draft=false
 ```
 
-GitHub now creates the tag and starts the workflow (if the `marketplace` environment has a
-required reviewer, the user must also approve the run in the Actions UI). Watch it:
+GitHub now creates the tag at `$SHA` and starts the workflow. Its `check` job verifies the
+ZIP's attestation first; the `publish` job then waits for the `marketplace` environment's
+required reviewer, so the user must approve it in the Actions UI. Watch it:
 
 ```
-gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch $(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status
 ```
 
 Report the outcome and remind the user to verify the listing and "What's New" on the
 Marketplace. If the run fails **after** the tag exists (e.g. Marketplace outage), fix the cause
-and re-run the workflow from the Actions UI — the checkout is by tag, so a re-run is
-reproducible; do not delete the tag.
+and re-run `release.yml` from the Actions UI — it builds nothing and writes nothing to the
+release; it only downloads the attached ZIP, re-checks its attestation and publishes it, so a
+re-run uploads the same bytes. Do not delete the tag.
 
 If the gate is **declined**: `gh release delete v<confirmed version>` — the draft vanishes
 cleanly, no tag ever existed, and `main` merely carries an unpublished version bump.

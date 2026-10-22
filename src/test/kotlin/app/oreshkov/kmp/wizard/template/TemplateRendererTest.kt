@@ -42,6 +42,16 @@ class TemplateRendererTest {
     @Test fun `feature name camel is camelCase`() =
         assertEquals("posting", subs["{{FEATURE_NAME_CAMEL}}"])
 
+    @Test fun `multi-word feature name yields four distinguishable case forms`() {
+        // A one-word feature makes camel == lower, so swapping the two placeholders would
+        // go unnoticed by every assertion above.
+        val s = TemplateRenderer.buildSubstitutions(defaultSettings.copy(featureName = "my_feature"))
+        assertEquals("MyFeature", s["{{FEATURE_NAME}}"])
+        assertEquals("myFeature", s["{{FEATURE_NAME_CAMEL}}"])
+        assertEquals("my_feature", s["{{FEATURE_NAME_LOWER}}"])
+        assertEquals("MY_FEATURE", s["{{FEATURE_NAME_UPPER}}"])
+    }
+
     // Case converters are covered row-by-row in the parameterized CaseConverterTest.
 
     // ── buildSubstitutions wiring for field / app / test value ────────────────
@@ -67,6 +77,25 @@ class TemplateRendererTest {
             defaultSettings.copy(appName = "My Awesome App")
         )
         assertEquals("my_awesome_app", s["{{APP_NAME_LOWER}}"])
+    }
+
+    @Test fun `app names that are not identifiers are repaired consistently in both forms`() {
+        fun forms(appName: String) = TemplateRenderer.buildSubstitutions(defaultSettings.copy(appName = appName))
+            .let { it.getValue("{{APP_NAME}}") to it.getValue("{{APP_NAME_LOWER}}") }
+
+        assertEquals("App2048" to "app2048", forms("2048"))
+        assertEquals("App1stApp" to "app1st_app", forms("1st app"))
+        assertEquals("MyApp" to "my_app", forms("Проект"))
+        assertEquals("ObjectApp" to "object_app", forms("Object"))
+        assertEquals("MyApp" to "my_app", forms("My App"))
+    }
+
+    @Test fun `a field name that clashes with a generated member fails fast`() {
+        for (bad in listOf("id", "updated_at", "save", "is_valid")) {
+            assertTrue("field \"$bad\" must be rejected", runCatching {
+                TemplateRenderer.buildSubstitutions(defaultSettings.copy(fieldName = bad))
+            }.exceptionOrNull() is IllegalArgumentException)
+        }
     }
 
     @Test fun `test value name is mapped correctly`() {

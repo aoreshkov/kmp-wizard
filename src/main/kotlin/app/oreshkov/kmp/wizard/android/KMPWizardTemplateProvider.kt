@@ -162,7 +162,7 @@ class KMPWizardTemplateProvider : WizardTemplateProvider() {
             val rootDir = moduleData.projectTemplateData.rootDir
 
             // Studio runs every recipe twice; only the second pass may touch the disk.
-            if (!isDryRunPass(rootDir)) {
+            if (!isDryRunPassOrNotify(rootDir)) {
                 val input = studioSettings(
                     appName = moduleData.themesData.appName,
                     packageName = moduleData.packageName,

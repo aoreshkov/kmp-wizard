@@ -1,6 +1,7 @@
 package app.oreshkov.kmp.wizard.template
 
 import app.oreshkov.kmp.wizard.KMPProjectSettings
+import app.oreshkov.kmp.wizard.WizardInputValidation
 import java.io.File
 
 object TemplateRenderer {
@@ -60,12 +61,21 @@ object TemplateRenderer {
         // which would render a project that cannot compile. Fail before writing anything.
         requireGeneratableIdentifier("Feature name", settings.featureName, featurePascal)
         requireGeneratableIdentifier("Field name", settings.fieldName, fieldCamel)
+        val fieldCollision = WizardInputValidation.templateMemberCollision(settings.fieldName)
+        require(fieldCollision == null) {
+            "Field name \"${settings.fieldName}\" clashes with the generated member \"$fieldCollision\"."
+        }
+
+        // The app name is repaired, never rejected (see appIdentifier), and both forms
+        // derive from the repaired identifier so class names and plugin IDs always agree.
+        val appIdentifier = WizardInputValidation.appIdentifier(settings.appName)
+        requireGeneratableIdentifier("App name", settings.appName, appIdentifier)
 
         return mapOf(
             "{{PACKAGE_NAME}}"       to settings.packageName,
             "{{PACKAGE_PATH}}"       to settings.packageName.replace('.', '/'),
-            "{{APP_NAME}}"           to settings.appName.toPascalCase(),
-            "{{APP_NAME_LOWER}}"     to settings.appName.toSnakeCase(),
+            "{{APP_NAME}}"           to appIdentifier,
+            "{{APP_NAME_LOWER}}"     to appIdentifier.toSnakeCase(),
             "{{FEATURE_NAME}}"       to featurePascal,
             "{{FEATURE_NAME_CAMEL}}" to featureCamel,
             "{{FEATURE_NAME_LOWER}}" to featureSnake,

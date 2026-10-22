@@ -59,6 +59,34 @@ class StudioProjectScaffoldTest {
         assertFalse(isDryRunPass(missing))
     }
 
+    @Test fun `a fresh marker means the real pass, and is consumed`() {
+        marker.writeText((NOW - 5_000).toString())
+
+        assertFalse(isDryRunPass(rootDir) { NOW })
+        assertFalse("the real pass must remove the marker", marker.exists())
+    }
+
+    @Test fun `a stale marker from an aborted run is ignored and replaced`() {
+        // Trusting it would flip the passes: the project would be written during the dry
+        // run and the dry run's new marker left inside the finished project.
+        marker.writeText((NOW - DRY_RUN_MARKER_MAX_AGE_MILLIS - 1).toString())
+
+        assertTrue("a stale marker must count as absent", isDryRunPass(rootDir) { NOW })
+        assertEquals("a fresh marker must replace it", NOW.toString(), marker.readText())
+        assertFalse("and the real pass still follows", isDryRunPass(rootDir) { NOW + 1_000 })
+    }
+
+    @Test fun `an unreadable marker counts as stale`() {
+        for (content in listOf("", "not a timestamp", "${NOW + 60_000}")) { // garbage, or from the future
+            marker.writeText(content)
+            assertTrue("marker \"$content\" must count as stale", isDryRunPass(rootDir) { NOW })
+            assertEquals(NOW.toString(), marker.readText())
+            marker.delete()
+        }
+    }
+
+    private val marker get() = rootDir.resolve(DRY_RUN_MARKER_NAME)
+
     // ── Gallery thumbnail ─────────────────────────────────────────────────────
 
     @Test fun `the gallery thumbnail resolves from the plugin's own classloader`() {
@@ -74,7 +102,7 @@ class StudioProjectScaffoldTest {
     // real commit with the recipe's own path list and a stand-in for the rendered project.
 
     @Test fun `every default Studio path is superseded by the commit`() {
-        writeStudioDefaults()
+        val written = writeStudioDefaults()
 
         runBlocking {
             generateStagedThenCommit(rootDir, replacedPaths = ANDROID_STUDIO_DEFAULT_PATHS) { staging ->
@@ -83,7 +111,9 @@ class StudioProjectScaffoldTest {
         }
 
         assertEquals("rootProject.name = \"kmp\"", rootDir.resolve("settings.gradle.kts").readText())
-        val survivors = ANDROID_STUDIO_DEFAULT_PATHS
+        // Checked against what Studio wrote, not against the production list: an entry
+        // dropped from ANDROID_STUDIO_DEFAULT_PATHS then shows up here as a survivor.
+        val survivors = written
             .filter { it != "settings.gradle.kts" }
             .filter { rootDir.resolve(it).exists() }
         assertEquals("Studio's own project files must not survive into the generated project",
@@ -163,20 +193,32 @@ class StudioProjectScaffoldTest {
             emptyList<String>(), rootDir.list()!!.filter { it.startsWith(COMMIT_BACKUP_DIR_PREFIX) })
     }
 
-    /** The scaffold Studio writes before the recipe runs, with both directories populated. */
-    private fun writeStudioDefaults() {
-        rootDir.resolve("settings.gradle.kts").writeText("rootProject.name = \"studio\"")
-        rootDir.resolve("build.gradle.kts").writeText("// studio root")
-        rootDir.resolve("gradlew").writeText("#!/bin/sh")
-        rootDir.resolve(".gitignore").writeText("/build")
-        rootDir.resolve("gradle/wrapper/gradle-wrapper.properties").apply {
-            parentFile.mkdirs()
-            writeText("distributionUrl=…")
+    /**
+     * The whole scaffold Studio writes before the recipe runs — both build-DSL flavours,
+     * both directories populated — spelled out independently of
+     * [ANDROID_STUDIO_DEFAULT_PATHS]. Returns the root entries written.
+     */
+    private fun writeStudioDefaults(): List<String> {
+        val files = linkedMapOf(
+            "settings.gradle.kts" to "rootProject.name = \"studio\"",
+            "settings.gradle" to "rootProject.name = 'studio'",
+            "build.gradle.kts" to "// studio root",
+            "build.gradle" to "// studio root (Groovy)",
+            "gradle.properties" to "org.gradle.jvmargs=-Xmx2048m",
+            "local.properties" to "sdk.dir=/opt/android-sdk",
+            "gradlew" to "#!/bin/sh",
+            "gradlew.bat" to "@rem Gradle startup script for Windows",
+            ".gitignore" to "/build",
+            "gradle/wrapper/gradle-wrapper.properties" to "distributionUrl=…",
+            "app/build.gradle.kts" to "plugins { }",
+        )
+        files.forEach { (path, text) ->
+            rootDir.resolve(path).apply {
+                parentFile.mkdirs()
+                writeText(text)
+            }
         }
-        rootDir.resolve("app/build.gradle.kts").apply {
-            parentFile.mkdirs()
-            writeText("plugins { }")
-        }
+        return files.keys.map { it.substringBefore('/') }.distinct()
     }
 
     // ── Settings mapping ──────────────────────────────────────────────────────
@@ -207,6 +249,27 @@ class StudioProjectScaffoldTest {
         assertEquals(StudioInput.InvalidName(NameParameter.FEATURE, "заметка"), names(feature = "заметка", field = "content"))
         assertEquals(StudioInput.InvalidName(NameParameter.FIELD, "object"), names(feature = "note", field = "object"))
         assertEquals(StudioInput.InvalidName(NameParameter.FIELD, "!!!"), names(feature = "note", field = "!!!"))
+    }
+
+    @Test fun `field names that clash with the generated model are rejected, naming the member`() {
+        assertEquals(StudioInput.InvalidName(NameParameter.FIELD, "id", clashesWith = "id"), names(feature = "note", field = "id"))
+        assertEquals(StudioInput.InvalidName(NameParameter.FIELD, "Updated At", clashesWith = "updatedAt"),
+            names(feature = "note", field = "Updated At"))
+        assertEquals(StudioInput.InvalidName(NameParameter.FIELD, "save", clashesWith = "saveError"),
+            names(feature = "note", field = "save"))
+    }
+
+    @Test fun `packages Studio accepts but the Kotlin project cannot use are rejected first`() {
+        // Studio's own validator is Java-only: `fun` is a Kotlin hard keyword, underscores
+        // break the iOS/desktop bundle IDs, and the IDEA form requires lowercase segments.
+        for (pkg in listOf("com.example.fun", "com.example.my_app", "Com.Example.App", "app")) {
+            assertEquals(
+                StudioInput.InvalidName(NameParameter.PACKAGE, pkg),
+                // An invalid feature too: the package must be reported, so nothing is generated.
+                names(feature = "2fa", field = "content", packageName = pkg),
+            )
+        }
+        assertEquals("com.example.app", valid(names(feature = "note", field = "content", packageName = " com.example.app ")).packageName)
     }
 
     @Test fun `studio's own first-page values and the platform flags carry through`() {
@@ -253,13 +316,18 @@ class StudioProjectScaffoldTest {
         assertFalse(settings.includeIos)
     }
 
+    private companion object {
+        /** A fixed "current time" for the dry-run marker clock. */
+        const val NOW = 1_800_000_000_000L
+    }
+
     private fun valid(input: StudioInput): KMPProjectSettings =
         (input as? StudioInput.Valid ?: error("expected valid input, got $input")).settings
 
-    private fun names(feature: String, field: String) =
+    private fun names(feature: String, field: String, packageName: String = "com.example.myapp") =
         studioSettings(
             appName = "MyApp",
-            packageName = "com.example.myapp",
+            packageName = packageName,
             featureName = feature,
             fieldName = field,
             testValueName = "Buy groceries",

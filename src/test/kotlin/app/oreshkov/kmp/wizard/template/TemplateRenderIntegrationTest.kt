@@ -71,6 +71,48 @@ class TemplateRenderIntegrationTest {
         assertFalse("RENAMES.txt must not be rendered", tempDir.resolve("RENAMES.txt").exists())
     }
 
+    @Test fun `multi-word names render idiomatic Kotlin identifiers`() {
+        // A one-word feature hides case bugs (camel == lower == "posting"); this render is
+        // the only test that tells `myFeatureDao` from `my_featureDao`.
+        TemplateRenderer.render(multiWordSettings, tempDir)
+
+        assertTrue("feature/my_feature module directory should exist", tempDir.resolve("feature/my_feature").isDirectory)
+
+        val kotlinFiles = tempDir.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        assertTrue("expected rendered Kotlin sources", kotlinFiles.isNotEmpty())
+
+        val offenders = mutableListOf<String>()
+        for (file in kotlinFiles) {
+            val relPath = file.relativeTo(tempDir).invariantSeparatorsPath
+            val text = file.readText()
+
+            // Packages stay lower_snake and must keep matching their directories.
+            PACKAGE_LINE.find(text)?.groupValues?.get(1)?.let { pkg ->
+                val dir = relPath.substringAfter("/kotlin/", "").substringBeforeLast('/', "")
+                if (dir.isNotEmpty() && dir != pkg.replace('.', '/')) offenders += "$relPath: package $pkg vs dir $dir"
+            }
+
+            GLUED_SNAKE_INPUT.findAll(text.withoutCommentsAndStrings())
+                .forEach { offenders += "$relPath: mixed-case identifier ${it.value}" }
+        }
+
+        assertTrue("Non-idiomatic identifiers in the multi-word render:\n" + offenders.joinToString("\n"), offenders.isEmpty())
+    }
+
+    @Test fun `an app name that is not an identifier renders valid class names and plugin IDs`() {
+        TemplateRenderer.render(multiWordSettings.copy(appName = "2048"), tempDir)
+
+        val offenders = mutableListOf<String>()
+        tempDir.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "kts") }.forEach { file ->
+            val relPath = file.relativeTo(tempDir).invariantSeparatorsPath
+            val text = file.readText()
+            DIGIT_LEADING_TYPE.findAll(text).forEach { offenders += "$relPath: ${it.value}" }
+            DOT_LEADING_PLUGIN_ID.findAll(text).forEach { offenders += "$relPath: ${it.value}" }
+        }
+        assertTrue("Invalid identifiers for app name \"2048\":\n" + offenders.joinToString("\n"), offenders.isEmpty())
+        assertTrue(tempDir.resolve("settings.gradle.kts").readText().contains("rootProject.name = \"App2048\""))
+    }
+
     @Test fun `every build-time dotfile rename is reversed by the renderer`() {
         // generateTemplates ships its templateRenamedFiles table as RENAMES.txt; a name
         // added there but not to RESTORED_FILE_NAMES would ship e.g. `gitmodules.txt`
@@ -191,6 +233,34 @@ class TemplateRenderIntegrationTest {
             fieldName = "narrative",
             testValueName = "Groceries",
         )
+        val multiWordSettings = KMPProjectSettings(
+            appName = "My App",
+            packageName = "com.example.myapp",
+            featureName = "my_feature",
+            fieldName = "user_name",
+            testValueName = "Groceries",
+        )
+
+        val PACKAGE_LINE = Regex("""(?m)^package\s+([\w.]+)""")
+
+        val DIGIT_LEADING_TYPE = Regex("""\b(?:class|object|interface|fun)\s+\d\w*""")
+        val DOT_LEADING_PLUGIN_ID = Regex("""id\("\.""")
+
+        /**
+         * A snake_case form of one of [multiWordSettings]' inputs glued straight onto other
+         * letters or digits: `my_featureDao`, `_my_features`, `my_feature1`. Snake-joined
+         * uses stay legal — resource keys (`my_feature_list_title`) and the ledger's own
+         * `subject_behavior` test names (`app_starts_and_shows_my_feature_list`).
+         */
+        val GLUED_SNAKE_INPUT =
+            Regex("""\w*(?:[A-Za-z0-9](?:my_feature|my_app|user_name)|(?:my_feature|my_app|user_name)[A-Za-z0-9])\w*""")
+
+        // Good enough for the templates (no raw strings): identifiers inside string
+        // literals, comments and backtick test names are prose, not declarations.
+        private val NON_CODE = Regex("""(?s)/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\\n])*"|`[^`\n]*`""")
+
+        private fun String.withoutCommentsAndStrings(): String = replace(NON_CODE, " ")
+
         val binaryExtensions = TemplateRenderer.BINARY_EXTENSIONS
 
         // A leftover template placeholder is specifically `{{UPPER_SNAKE}}`; this avoids

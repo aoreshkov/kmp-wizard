@@ -6,11 +6,22 @@
 
 ### Changed
 
+- **Multi-word feature names produce idiomatic camelCase Kotlin identifiers.** A feature named `my_feature` used to generate `my_featureDao`, `val my_features` and `my_feature1`; it now generates `myFeatureDao`, `myFeatures` and `myFeature1`. Packages, module directories, resource keys and database table names keep the snake_case form. Projects with a one-word feature are unchanged.
+
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+
+- **Projects whose name starts with a digit or has no Latin letters now generate valid class names and plugin IDs.** A project named `2048` used to produce `class 2048App`, and `Проект` produced the plugin ID `.kotlin.multiplatform`. The code names are now repaired (`App2048`, `MyApp`), while the project directory keeps the name you typed.
+- **Field names that clash with the generated model are rejected.** Names such as `id`, `updated_at`, `is_valid` or `save` (which collides with the generated `saveError`) used to produce a project that doesn't compile. Both the IntelliJ IDEA form and the Android Studio path now say which generated member the name clashes with.
+- **Android Studio: the package name is validated like it is in IntelliJ IDEA.** Studio's own check accepts packages such as `com.example.fun` (a Kotlin keyword) or `com.example.my_app` (which breaks the iOS and desktop bundle IDs). The wizard now stops before generating anything and names the problem.
+- **Deselected platforms and unlicensed Pro files can no longer slip into a project.** If a file inside them can't be deleted, for example because antivirus holds it open, generation now fails cleanly instead of leaving the folder behind.
+- **Cancelling after the files are written now tells you the project exists.** A Cancel during the Gradle link used to leave a project that was never linked, with no message. You now get a notification that tells you to finish with *Link Gradle Project*.
+- **A temporary backup folder that can't be removed is reported** instead of being silently left inside the new project.
+- **Pro features follow your license at generation time** in IntelliJ IDEA, as they already did in Android Studio. Before, the wizard used the entitlement it read when the dialog opened.
+- **Android Studio: a leftover marker from an aborted run no longer makes the wizard write the project during Studio's dry run.** The post-sync `apiDump` listener is also dropped if the first sync never happens, and regenerating into the same folder no longer runs `apiDump` twice.
 
 ### Security
 

@@ -66,6 +66,55 @@ class WizardInputValidationTest {
         assertEquals("com.example.app", WizardInputValidation.defaultPackageName("!!!"))
     }
 
+    // ── App identifier derived from the project name ──────────────────────────
+
+    @Test fun `the app identifier keeps an ordinary name and repairs broken ones`() {
+        assertEquals("MyApp", WizardInputValidation.appIdentifier("My App"))
+        assertEquals("Ledger", WizardInputValidation.appIdentifier("ledger"))
+        assertEquals("App2048", WizardInputValidation.appIdentifier("2048"))
+        assertEquals("App1stApp", WizardInputValidation.appIdentifier("1st app"))
+        assertEquals("MyApp", WizardInputValidation.appIdentifier("Проект"))
+        assertEquals("MyApp", WizardInputValidation.appIdentifier("!!!"))
+        assertEquals("ObjectApp", WizardInputValidation.appIdentifier("Object"))
+        assertEquals("ClassApp", WizardInputValidation.appIdentifier("class"))
+    }
+
+    @Test fun `the app identifier is always a valid, non-reserved Kotlin identifier`() {
+        for (name in listOf("2048", "1st app", "Проект", "", "Object", "Fun", "My App", "kmp-ledger", "x")) {
+            val id = WizardInputValidation.appIdentifier(name)
+            assertTrue("\"$name\" -> \"$id\" must start with a Latin letter", id.first() in 'A'..'Z')
+            assertTrue("\"$name\" -> \"$id\" must be alphanumeric", id.all { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' })
+            assertFalse("\"$name\" -> \"$id\" must not be reserved", id.lowercase() in WizardInputValidation.RESERVED_WORDS)
+        }
+    }
+
+    // ── Field names vs. the generated model's fixed members ───────────────────
+
+    @Test fun `field names that redeclare a generated member are rejected`() {
+        for ((field, member) in listOf(
+            "id" to "id",
+            "updated_at" to "updatedAt",
+            "is_deleted" to "isDeleted",
+            "pending_sync" to "pendingSync",
+            "is_edit_mode" to "isEditMode",
+            "is_valid" to "isValid",
+            "save_error" to "saveError",
+            // Derived clash: the UI state declares `{{FIELD_NAME}}Error` next to `saveError`.
+            "save" to "saveError",
+        )) {
+            assertTrue("$field is a valid identifier on its own", WizardInputValidation.isValidIdentifier(field))
+            assertEquals(field, member, WizardInputValidation.templateMemberCollision(field))
+            assertFalse("$field must be rejected as a field name", WizardInputValidation.isValidFieldName(field))
+        }
+    }
+
+    @Test fun `ordinary field names do not clash`() {
+        for (field in listOf("content", "title", "user_name", "identifier", "ids", "saved", "valid")) {
+            assertEquals(field, null, WizardInputValidation.templateMemberCollision(field))
+            assertTrue("$field must be accepted", WizardInputValidation.isValidFieldName(field))
+        }
+    }
+
     // ── Feature / field identifiers ───────────────────────────────────────────
 
     @Test fun `identifiers that render as a keyword are rejected`() {

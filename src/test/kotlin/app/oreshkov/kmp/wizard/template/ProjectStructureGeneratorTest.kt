@@ -1,11 +1,14 @@
 package app.oreshkov.kmp.wizard.template
 
 import app.oreshkov.kmp.wizard.KMPProjectSettings
+import app.oreshkov.kmp.wizard.holdUndeletable
 import org.junit.After
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.File
+import java.io.IOException
 import kotlin.io.path.createTempDirectory
 
 class ProjectStructureGeneratorTest {
@@ -28,6 +31,22 @@ class ProjectStructureGeneratorTest {
         assertFalse(tempDir.resolve("androidApp").exists())
         assertTrue(tempDir.resolve("desktopApp").exists())
         assertTrue(tempDir.resolve("iosApp").exists())
+    }
+
+    @Test fun `a prune that cannot delete everything fails instead of shipping a half-pruned project`() {
+        seedPlatformDirs()
+        val locked = tempDir.resolve("androidApp/src/Locked.kt").apply {
+            parentFile.mkdirs()
+            writeText("class Locked")
+        }
+        val hold = holdUndeletable(locked)
+        assumeTrue("cannot make a file undeletable here", hold != null)
+
+        hold!!.use {
+            assertThrows(IOException::class.java) {
+                generatorWith(includeAndroid = false).postProcess(tempDir)
+            }
+        }
     }
 
     @Test fun `desktopApp directory is removed when Desktop is excluded`() {
