@@ -97,6 +97,8 @@ class WizardInputValidationTest {
             "is_deleted" to "isDeleted",
             "pending_sync" to "pendingSync",
             "is_edit_mode" to "isEditMode",
+            "is_saving" to "isSaving",
+            "is_saved" to "isSaved",
             "is_valid" to "isValid",
             "save_error" to "saveError",
             // Derived clash: the UI state declares `{{FIELD_NAME}}Error` next to `saveError`.

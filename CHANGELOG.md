@@ -6,6 +6,7 @@
 
 ### Changed
 
+- **Ledger pin bumped to `v1.10.0`.** Generated projects no longer double-submit or double-navigate on repeat taps: Save ignores taps while a save is in flight (no more duplicate postings in create mode), opening a posting or the editor is single-top, a double tap on a back button pops only its own screen, and re-selecting the current navigation-bar section scrolls its list to the top instead of discarding its back stack. Save and delete outcomes are now UI state rather than one-off events, so a result that lands during rotation or a section switch is no longer lost, error snackbars don't reappear, and the delete confirmation dialog survives rotation. Dependency upgrades: Compose Multiplatform 1.12.2, Material3 Adaptive 1.3.0 (stable), `navigation3-ui` 1.2.0-rc01 and `navigation3-runtime` 1.2.0. Because the edit screen's state now declares `isSaving` and `isSaved` next to your field, the field names `is_saving` and `is_saved` are rejected.
 - **Multi-word feature names produce idiomatic camelCase Kotlin identifiers.** A feature named `my_feature` used to generate `my_featureDao`, `val my_features` and `my_feature1`; it now generates `myFeatureDao`, `myFeatures` and `myFeature1`. Packages, module directories, resource keys and database table names keep the snake_case form. Projects with a one-word feature are unchanged.
 
 ### Deprecated
