@@ -54,13 +54,16 @@ internal object WizardInputValidation {
      * - `{{FEATURE_NAME}}` (core/model) and `{{FEATURE_NAME}}Entity` (core/database):
      *   `id`, plus the entity's sync metadata `updatedAt`, `isDeleted`, `pendingSync`;
      * - `{{FEATURE_NAME}}EditUiState.Editing` (feature/impl `{{FEATURE_NAME}}EditViewModel.kt`):
-     *   `isEditMode`, `saveError`, `isValid`.
+     *   `isEditMode`, `isSaving`, `isSaved`, `saveError`, `isValid`.
      *
      * A drift-guard test re-derives this set from the bundled templates, so a ledger bump
      * that adds a member fails the build instead of shipping the collision.
      */
     val TEMPLATE_RESERVED_FIELDS: Set<String> =
-        setOf("id", "updatedAt", "isDeleted", "pendingSync", "isEditMode", "saveError", "isValid")
+        setOf(
+            "id", "updatedAt", "isDeleted", "pendingSync",
+            "isEditMode", "isSaving", "isSaved", "saveError", "isValid",
+        )
 
     /**
      * Suffixes of the members the templates derive from the field
