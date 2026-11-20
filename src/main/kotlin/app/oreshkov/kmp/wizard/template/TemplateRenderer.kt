@@ -76,6 +76,9 @@ object TemplateRenderer {
             "{{PACKAGE_PATH}}"       to settings.packageName.replace('.', '/'),
             "{{APP_NAME}}"           to appIdentifier,
             "{{APP_NAME_LOWER}}"     to appIdentifier.toSnakeCase(),
+            // Flat, not snake_case: a URI scheme cannot contain "_". appIdentifier is ASCII
+            // letters and digits starting with a letter, so this is always a valid scheme.
+            "{{APP_SCHEME}}"         to appIdentifier.lowercase(),
             "{{FEATURE_NAME}}"       to featurePascal,
             "{{FEATURE_NAME_CAMEL}}" to featureCamel,
             "{{FEATURE_NAME_LOWER}}" to featureSnake,

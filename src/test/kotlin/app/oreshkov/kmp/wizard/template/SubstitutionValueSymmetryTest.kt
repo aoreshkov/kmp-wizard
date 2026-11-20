@@ -90,6 +90,8 @@ class SubstitutionValueSymmetryTest {
             Regex("""app\.oreshkov\.ledger""") to "com.example.my.app",
             Regex("""app/oreshkov/ledger""") to "com/example/my/app",
             Regex("""Ledger""") to "MyApp",
+            // The deep-link scheme is the flat lowercase app name: "_" is not legal in a scheme.
+            Regex("""ledger(?=://)|(?<=android:scheme=")ledger(?=")|(?<=<string>)ledger(?=</string>)""") to "myapp",
             Regex("""ledger""") to "my_app",
             Regex("""POSTING""") to "MY_FEATURE",
             Regex("""Posting""") to "MyFeature",
