@@ -5,11 +5,11 @@ intellij-platform   = "2.20.1"
 # flags any API introduced after sinceBuild, and Android Studio trails IntelliJ
 # IDEA by a full branch (see intellij-since-build).
 intellij-ide        = "2026.1"
-# 261, not 262, because Android Studio is a branch behind: the newest Android
-# Studio on ANY channel (Quail 4 canary, 2026-07-23) is still AI-261.26222.65, so
-# a 262 floor makes the plugin uninstallable in every existing Android Studio.
-# Quail's bundled Android tooling is AGP 9.3.1 (libagp-version.jar), well above
-# the ledger's 9.1.1, so the 1.6.1 AGP-compatibility fix is unaffected.
+# 261, not 262, because Android Studio trails IntelliJ IDEA by a branch: Quail
+# (2026.1.x) is AI-261, and Quail 2 is the oldest Android Studio that opens the
+# projects ledger v1.11.0 generates (AGP 9.3.3). Stable Android Studio reached 262
+# with Rabbit (2026.2, Oct 2026); raise this floor only once dropping every Quail
+# user is acceptable.
 intellij-since-build = "261"
 # Marketplace org.jetbrains.android, needed for the Android Studio wizard path
 # (com.android.tools.idea.wizard.template). Not a bundled plugin: the unified
@@ -21,8 +21,8 @@ android-plugin       = "261.22158.277"
 # never selects Android Studio. Bump manually from the Android Studio releases list
 # (plugins.jetbrains.com/docs/intellij/android-studio-releases-list.html): "stable" =
 # newest stable release, "next" = newest build on the following branch (canary/RC).
-android-studio-stable = "2026.2.1.8"
-android-studio-next   = "2026.2.2.6"
+android-studio-stable = "2026.2.2.10"
+android-studio-next   = "2026.3.1.2"
 changelog            = "2.5.0"
 junit               = "4.13.2"
 
