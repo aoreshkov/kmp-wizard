@@ -4,7 +4,13 @@
 
 ### Added
 
+- **Generated projects open deep links on their own scheme.** `myapp://my_features`, `myapp://my_features/new`, `myapp://my_features/{id}`, `myapp://my_features/{id}/edit` and `myapp://settings` open the matching screen on Android, desktop and iOS, with the screens a user would have passed through (such as the list) on the back stack. The scheme is the app name in flat lowercase (`myapp` for "My App"), because an underscore is not legal in a URI scheme and iOS rejects it.
+- **Generated projects include a Bulgarian translation as an example of adding a language.** The translation covers every UI string, Android 13 and later lists the app under the per-app language setting, and a new `checkStringResourceParity` check fails the build when a language is missing a string. Your feature's Bulgarian text still describes the template's own feature, so its `values-bg/strings.xml` and Bulgarian screen test begin with a note on how to translate it or remove Bulgarian.
+
 ### Changed
+
+- **Generated projects need IntelliJ IDEA 2026.3 or Android Studio Quail 2 (2026.1.2) to open.** They now use AGP 9.3.3 (up from 9.1.1), and older IDEs refuse it during Gradle sync. The plugin itself still installs on 2026.1 and later.
+- **Ledger pin bumped to `v1.11.0`.** Besides the deep links and the Bulgarian translation, generated projects get right-to-left layout tests for every screen, screen titles marked as headings for screen readers, desktop keyboard tests, and a fix that lets Tab leave the editor's multi-line text field instead of typing a tab character. Dependency upgrades: Kotlin 2.4.21, AGP 9.3.3, AndroidX DataStore 1.3.0, kotlinx.serialization 1.13.0, KSP 2.3.14, Robolectric 4.18.1 and Gradle 9.9.2.
 
 ### Deprecated
 

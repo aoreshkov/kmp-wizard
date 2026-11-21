@@ -79,6 +79,23 @@ class TemplateRendererTest {
         assertEquals("my_awesome_app", s["{{APP_NAME_LOWER}}"])
     }
 
+    @Test fun `app scheme is flat lowercase, a legal URI scheme for any app name`() {
+        // RFC 3986: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ). No "_", so the
+        // snake_case form cannot serve as the deep-link scheme.
+        fun scheme(appName: String) =
+            TemplateRenderer.buildSubstitutions(defaultSettings.copy(appName = appName)).getValue("{{APP_SCHEME}}")
+
+        assertEquals("ledger", scheme("Ledger"))
+        assertEquals("myawesomeapp", scheme("My Awesome App"))
+        assertEquals("app2048", scheme("2048"))
+        assertEquals("myapp", scheme("Проект"))
+        for (name in listOf("My Awesome App", "1st app", "Object", "my-app_v2")) {
+            assertTrue("scheme for \"$name\"", scheme(name).matches(Regex("[a-z][a-z0-9+.-]*")))
+            val upper = TemplateRenderer.buildSubstitutions(defaultSettings.copy(appName = name)).getValue("{{APP_SCHEME_UPPER}}")
+            assertEquals("upper-case scheme for \"$name\"", scheme(name).uppercase(), upper)
+        }
+    }
+
     @Test fun `app names that are not identifiers are repaired consistently in both forms`() {
         fun forms(appName: String) = TemplateRenderer.buildSubstitutions(defaultSettings.copy(appName = appName))
             .let { it.getValue("{{APP_NAME}}") to it.getValue("{{APP_NAME_LOWER}}") }

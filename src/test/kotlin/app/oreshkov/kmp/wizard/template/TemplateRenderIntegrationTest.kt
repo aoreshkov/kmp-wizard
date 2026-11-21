@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeFalse
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.File
@@ -97,6 +98,34 @@ class TemplateRenderIntegrationTest {
         }
 
         assertTrue("Non-idiomatic identifiers in the multi-word render:\n" + offenders.joinToString("\n"), offenders.isEmpty())
+    }
+
+    @Test fun `a multi-word app name renders a legal deep-link scheme everywhere it is spelled`() {
+        // The snake_case app name ("my_app") is not a URI scheme: "_" is illegal (RFC 3986),
+        // and iOS rejects it in CFBundleURLSchemes. The code, manifest and plist must agree.
+        TemplateRenderer.render(multiWordSettings, tempDir)
+
+        val offenders = mutableListOf<String>()
+        tempDir.walkTopDown().filter { it.isFile && !isBinary(it.name, it.readBytes()) }.forEach { file ->
+            SNAKE_SCHEME.findAll(file.readText()).forEach {
+                offenders += "${file.relativeTo(tempDir).invariantSeparatorsPath}: ${it.value}"
+            }
+        }
+        assertTrue("Deep-link scheme rendered in snake_case or left as the ledger's:\n" + offenders.joinToString("\n"), offenders.isEmpty())
+    }
+
+    @Test fun `the Bulgarian translation of the feature is labelled as the template's example`() {
+        val stringsPath = "feature/{{FEATURE_NAME_LOWER}}/impl/src/commonMain/composeResources/values-bg/strings.xml"
+        assumeTrue("the pinned ledger has no Bulgarian translation", stringsPath in loadManifest())
+        TemplateRenderer.render(multiWordSettings, tempDir)
+
+        val strings = tempDir.resolve(stringsPath.replace("{{FEATURE_NAME_LOWER}}", "my_feature")).readText()
+        assertTrue(
+            "values-bg/strings.xml should open with the example note",
+            strings.startsWith("<!--") && strings.substringBefore("-->").contains("Example translation from the KMP Project Wizard template"),
+        )
+        val test = tempDir.walkTopDown().single { it.name == "MyFeatureListScreenBulgarianTest.kt" }.readText()
+        assertTrue("the Bulgarian test should carry the example note", test.contains("// Example from the KMP Project Wizard template"))
     }
 
     @Test fun `an app name that is not an identifier renders valid class names and plugin IDs`() {
@@ -245,6 +274,13 @@ class TemplateRenderIntegrationTest {
 
         val DIGIT_LEADING_TYPE = Regex("""\b(?:class|object|interface|fun)\s+\d\w*""")
         val DOT_LEADING_PLUGIN_ID = Regex("""id\("\.""")
+
+        /**
+         * The places the ledger spells its scheme, rendered with [multiWordSettings]' snake_case
+         * app name, or left as the ledger's own scheme in any case (`LEDGER://` in its test of
+         * case-insensitive matching).
+         */
+        val SNAKE_SCHEME = Regex("""my_app://|android:scheme="my_app"|<string>my_app</string>|(?i:ledger://)""")
 
         /**
          * A snake_case form of one of [multiWordSettings]' inputs glued straight onto other

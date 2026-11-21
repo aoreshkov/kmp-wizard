@@ -369,6 +369,20 @@ val templateSubstitutions = listOf(
     // revert to CMP's "{group}.{module}.generated.resources" default — which resolves
     // from rootProject.name — and would need a rule keyed on the FLAT lowercase app
     // name here, not the snake_case one below.
+    //
+    // The deep-link scheme is the one flat-lowercase use: an RFC 3986 scheme admits only
+    // letters, digits, "+", "-" and ".", so the snake_case "my_app" the bare "ledger" rule
+    // renders would be an invalid scheme (Android tolerates it, iOS URL types do not).
+    // Each place the ledger spells its scheme is listed in full, ahead of that rule.
+    // PostingDeepLinksTest checks that scheme and host match case-insensitively with
+    // "LEDGER://Postings/42". The bare rules would leave the scheme as LEDGER and turn the
+    // host into "MyFeatures", which never matches "my_features", so the whole URI prefix is
+    // upper-cased instead. That makes it the one rule the ledger's own values reproduce only
+    // up to case (LEDGER://POSTINGS), which SubstitutionValueSymmetryTest allows for by name.
+    "LEDGER://Postings"             to "{{APP_SCHEME_UPPER}}://{{FEATURE_NAME_UPPER}}S", // case-insensitivity test
+    "ledger://"                  to "{{APP_SCHEME}}://",                    // DEEP_LINK_BASE_URI, tests, docs
+    "android:scheme=\"ledger\""     to "android:scheme=\"{{APP_SCHEME}}\"",    // AndroidManifest intent filter
+    "<string>ledger</string>"       to "<string>{{APP_SCHEME}}</string>",      // Info.plist CFBundleURLSchemes
     "Ledger"                        to "{{APP_NAME}}",
     "ledger"                        to "{{APP_NAME_LOWER}}",   // e.g. "ledger.db", module ids
 
@@ -404,6 +418,46 @@ val templateSubstitutions = listOf(
     // e.g.  "feature/posting/impl"  →  "feature/{{FEATURE_NAME_LOWER}}/impl"
     // Covered automatically because we apply substitutions to the relative
     // path string as well as file contents — no extra entry needed here.
+)
+
+/**
+ * Notes inserted into specific templates after substitution, as
+ * (ledger source path, anchor, note): the note goes in front of the first occurrence of
+ * the anchor in the substituted text. They mark ledger files that a generated project
+ * receives as an example rather than as code fitted to the user's names. The note is not
+ * substituted at build time, so it may name the ledger's own feature; the anchor must
+ * contain no literal from [templateSubstitutions]. A present file without its anchor fails
+ * the build; an absent file (an older ledger pin) only warns.
+ */
+val templateNotes = listOf(
+    // The Bulgarian translation keeps the template's own wording after the keys are
+    // renamed, so a generated "invoice" feature would read "записи" (postings) in Bulgarian.
+    // It ships as a labelled example of adding a language rather than being dropped.
+    Triple(
+        "feature/posting/impl/src/commonMain/composeResources/values-bg/strings.xml",
+        "<resources>",
+        """
+        |<!--
+        |  Example translation from the KMP Project Wizard template. The keys follow your
+        |  names, but the Bulgarian text still describes the template's own feature
+        |  (postings, "записи") and field (narrative, "описание"). Translate it, or drop
+        |  Bulgarian: delete every values-bg folder and every *BulgarianTest, and remove
+        |  the bg line from androidApp/src/main/res/xml/locales_config.xml.
+        |-->
+        |
+        """.trimMargin(),
+    ),
+    Triple(
+        "feature/posting/impl/src/jvmTest/kotlin/app/oreshkov/ledger/feature/posting/impl/PostingListScreenBulgarianTest.kt",
+        "/**\n * Renders the list under the Bulgarian locale",
+        """
+        |// Example from the KMP Project Wizard template: the Bulgarian text asserted below is
+        |// the template's translation of its own feature (postings), from this module's
+        |// values-bg/strings.xml. Update both when you translate it; that file says how to
+        |// drop Bulgarian instead.
+        |
+        """.trimMargin(),
+    ),
 )
 
 /**
@@ -596,6 +650,10 @@ abstract class GenerateTemplatesTask : DefaultTask() {
     @get:Input
     abstract val kotlinFeatureLiteral: Property<String>
 
+    /** (ledger source path, anchor, note): the note is inserted before the anchor. */
+    @get:Input
+    abstract val notes: ListProperty<Triple<String, String, String>>
+
     @get:OutputDirectory
     abstract val templatesDir: DirectoryProperty
 
@@ -610,6 +668,8 @@ abstract class GenerateTemplatesTask : DefaultTask() {
         val binaryExts = binaryExtensions.get()
         val renames    = renamedFiles.get()
         val featureLiteral = kotlinFeatureLiteral.get()
+        val notesByPath = notes.get().associate { (path, anchor, note) -> path to (anchor to note) }
+        val notedPaths = mutableSetOf<String>()
 
         fun String.applySubstitutions(): String =
             subs.fold(this) { acc, (literal, placeholder) -> acc.replace(literal, placeholder) }
@@ -697,9 +757,21 @@ abstract class GenerateTemplatesTask : DefaultTask() {
                             stats.fallback++
                             logger.warn("  [fallback binary] $relativePath")
                         } else {
+                            val sourcePath = sourceFile.relativeTo(source).invariantSeparatorsPath
                             val substituted = original
                                 .let { if (sourceFile.isKotlinSource()) it.applyKotlinFeatureTokens() else it }
                                 .applySubstitutions()
+                                .let { text ->
+                                    val (anchor, note) = notesByPath[sourcePath] ?: return@let text
+                                    // Follow the file's own line endings (an archive made on
+                                    // Windows with autocrlf carries CRLF).
+                                    val eol = if ("\r\n" in text) "\r\n" else "\n"
+                                    val anchorRegex = Regex(anchor.split('\n').joinToString("\r?\n") { Regex.escape(it) })
+                                    val at = anchorRegex.find(text)?.range?.first
+                                    require(at != null) { "Template note anchor not found in $sourcePath: \"$anchor\"" }
+                                    notedPaths += sourcePath
+                                    text.substring(0, at) + note.replace("\n", eol) + text.substring(at)
+                                }
                             destFile.writeText(substituted, Charsets.UTF_8)
                             stats.text++
                             if (original != substituted) {
@@ -728,6 +800,11 @@ abstract class GenerateTemplatesTask : DefaultTask() {
         require(clashes.isEmpty()) {
             "Template paths would be silently dropped by Gradle's default excludes: " +
             "$clashes — add a rename rule (like .gitignore → gitignore.txt)."
+        }
+
+        // A pin older than the noted files simply lacks them; say so rather than fail.
+        (notesByPath.keys - notedPaths).forEach { path ->
+            logger.warn("Template note not applied, no such ledger file: $path")
         }
 
         outputDir.resolve("MANIFEST.txt")
@@ -767,6 +844,7 @@ val generateTemplates = tasks.register<GenerateTemplatesTask>("generateTemplates
     binaryExtensions.set(templateBinaryExtensions)
     renamedFiles.set(templateRenamedFiles)
     kotlinFeatureLiteral.set(templateKotlinFeatureLiteral)
+    notes.set(templateNotes)
     templatesDir.set(layout.buildDirectory.dir("generated-resources/templates"))
 }
 
