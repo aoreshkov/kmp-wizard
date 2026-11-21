@@ -374,7 +374,13 @@ val templateSubstitutions = listOf(
     // letters, digits, "+", "-" and ".", so the snake_case "my_app" the bare "ledger" rule
     // renders would be an invalid scheme (Android tolerates it, iOS URL types do not).
     // Each place the ledger spells its scheme is listed in full, ahead of that rule.
-    "ledger://"                     to "{{APP_SCHEME}}://",                    // DEEP_LINK_BASE_URI, tests, docs
+    // PostingDeepLinksTest checks that scheme and host match case-insensitively with
+    // "LEDGER://Postings/42". The bare rules would leave the scheme as LEDGER and turn the
+    // host into "MyFeatures", which never matches "my_features", so the whole URI prefix is
+    // upper-cased instead. That makes it the one rule the ledger's own values reproduce only
+    // up to case (LEDGER://POSTINGS), which SubstitutionValueSymmetryTest allows for by name.
+    "LEDGER://Postings"             to "{{APP_SCHEME_UPPER}}://{{FEATURE_NAME_UPPER}}S", // case-insensitivity test
+    "ledger://"                  to "{{APP_SCHEME}}://",                    // DEEP_LINK_BASE_URI, tests, docs
     "android:scheme=\"ledger\""     to "android:scheme=\"{{APP_SCHEME}}\"",    // AndroidManifest intent filter
     "<string>ledger</string>"       to "<string>{{APP_SCHEME}}</string>",      // Info.plist CFBundleURLSchemes
     "Ledger"                        to "{{APP_NAME}}",

@@ -111,7 +111,7 @@ class TemplateRenderIntegrationTest {
                 offenders += "${file.relativeTo(tempDir).invariantSeparatorsPath}: ${it.value}"
             }
         }
-        assertTrue("Deep-link scheme rendered in snake_case:\n" + offenders.joinToString("\n"), offenders.isEmpty())
+        assertTrue("Deep-link scheme rendered in snake_case or left as the ledger's:\n" + offenders.joinToString("\n"), offenders.isEmpty())
     }
 
     @Test fun `the Bulgarian translation of the feature is labelled as the template's example`() {
@@ -275,8 +275,12 @@ class TemplateRenderIntegrationTest {
         val DIGIT_LEADING_TYPE = Regex("""\b(?:class|object|interface|fun)\s+\d\w*""")
         val DOT_LEADING_PLUGIN_ID = Regex("""id\("\.""")
 
-        /** The places the ledger spells its scheme, rendered with [multiWordSettings]' snake_case app name. */
-        val SNAKE_SCHEME = Regex("""my_app://|android:scheme="my_app"|<string>my_app</string>""")
+        /**
+         * The places the ledger spells its scheme, rendered with [multiWordSettings]' snake_case
+         * app name, or left as the ledger's own scheme in any case (`LEDGER://` in its test of
+         * case-insensitive matching).
+         */
+        val SNAKE_SCHEME = Regex("""my_app://|android:scheme="my_app"|<string>my_app</string>|(?i:ledger://)""")
 
         /**
          * A snake_case form of one of [multiWordSettings]' inputs glued straight onto other

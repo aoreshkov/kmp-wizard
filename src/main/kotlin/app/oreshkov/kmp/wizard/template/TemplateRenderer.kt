@@ -79,6 +79,8 @@ object TemplateRenderer {
             // Flat, not snake_case: a URI scheme cannot contain "_". appIdentifier is ASCII
             // letters and digits starting with a letter, so this is always a valid scheme.
             "{{APP_SCHEME}}"         to appIdentifier.lowercase(),
+            // Only the deep-link test of case-insensitive scheme matching spells it upper-case.
+            "{{APP_SCHEME_UPPER}}"   to appIdentifier.uppercase(),
             "{{FEATURE_NAME}}"       to featurePascal,
             "{{FEATURE_NAME_CAMEL}}" to featureCamel,
             "{{FEATURE_NAME_LOWER}}" to featureSnake,

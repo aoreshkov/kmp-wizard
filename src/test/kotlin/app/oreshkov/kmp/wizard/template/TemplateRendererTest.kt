@@ -91,6 +91,8 @@ class TemplateRendererTest {
         assertEquals("myapp", scheme("Проект"))
         for (name in listOf("My Awesome App", "1st app", "Object", "my-app_v2")) {
             assertTrue("scheme for \"$name\"", scheme(name).matches(Regex("[a-z][a-z0-9+.-]*")))
+            val upper = TemplateRenderer.buildSubstitutions(defaultSettings.copy(appName = name)).getValue("{{APP_SCHEME_UPPER}}")
+            assertEquals("upper-case scheme for \"$name\"", scheme(name).uppercase(), upper)
         }
     }
 

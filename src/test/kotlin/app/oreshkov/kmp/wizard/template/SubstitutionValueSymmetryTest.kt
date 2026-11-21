@@ -38,7 +38,9 @@ class SubstitutionValueSymmetryTest {
         // literal the forward pass started from.
         val mismatches = forwardPairs.mapNotNull { (literal, placeholder) ->
             val roundTripped = placeholder.applySubstitutions(reverse)
-            if (roundTripped != literal) "  $placeholder -> \"$roundTripped\", expected \"$literal\"" else null
+            val matches = roundTripped == literal ||
+                (literal in CASE_FOLDED_LITERALS && roundTripped.equals(literal, ignoreCase = true))
+            if (!matches) "$placeholder -> \"$roundTripped\", expected \"$literal\"" else null
         }
 
         assertTrue(
@@ -85,8 +87,18 @@ class SubstitutionValueSymmetryTest {
             }
 
     private companion object {
+        /**
+         * Forward literals that sit in a test of case-insensitive matching, rendered in one
+         * case so they still match a multi-word name ("MYAPP://MY_FEATURES" vs
+         * "myapp://my_features"). The ledger's values reproduce them only up to case.
+         */
+        val CASE_FOLDED_LITERALS = setOf("LEDGER://Postings")
+
         /** The ledger's literals → [multiWordSettings]' values, chosen by the literal's own casing. */
         val MULTI_WORD_RESPELLING = listOf(
+            // The case-insensitivity deep link: an upper-case scheme and snake host.
+            Regex("""(?<=LEDGER://)Postings""") to "MY_FEATURES",
+            Regex("""LEDGER(?=://)""") to "MYAPP",
             Regex("""app\.oreshkov\.ledger""") to "com.example.my.app",
             Regex("""app/oreshkov/ledger""") to "com/example/my/app",
             Regex("""Ledger""") to "MyApp",
